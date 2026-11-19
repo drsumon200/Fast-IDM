@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Universal Download Manager Extension",
+  "version": "2.0",
+  "description": "Hover over any video (YouTube, Facebook, HTML5) or right-click links to download.",
+  "permissions": ["webRequest", "tabs", "contextMenus"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1:9876/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "all_frames": true
+    }
+  ]
+}
