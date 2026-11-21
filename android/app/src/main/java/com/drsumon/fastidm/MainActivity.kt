@@ -11,6 +11,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.content.ContentUris
 import android.webkit.URLUtil
+import java.net.URLConnection
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
@@ -97,19 +98,29 @@ class MainActivity : ComponentActivity() {
     }
     private fun queryHistory(): List<HistoryItem> {
         val result = mutableListOf<HistoryItem>()
-        val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-        queryDownloads().filter { it.status == DownloadManager.STATUS_SUCCESSFUL }.forEach { item ->
-            try {
-                val uri = manager.getUriForDownloadedFile(item.id) ?: return@forEach
-                val mime = manager.getMimeTypeForDownloadedFile(item.id) ?: "application/octet-stream"
-                result += HistoryItem(-item.id, item.title, mime, item.downloaded, System.currentTimeMillis(), uri)
-            } catch (_: Exception) {}
-        }
-        if (Build.VERSION.SDK_INT >= 29) {
-            val projection = arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads.MIME_TYPE, MediaStore.Downloads.SIZE, MediaStore.Downloads.DATE_ADDED, MediaStore.Downloads.RELATIVE_PATH)
+        if (Build.VERSION.SDK_INT < 29) {
+            val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+            queryDownloads().filter { it.status == DownloadManager.STATUS_SUCCESSFUL }.forEach { item ->
+                try {
+                    val uri = manager.getUriForDownloadedFile(item.id) ?: return@forEach
+                    val mime = manager.getMimeTypeForDownloadedFile(item.id)
+                        ?: URLConnection.guessContentTypeFromName(item.title)
+                        ?: "application/octet-stream"
+                    result += HistoryItem(-item.id, item.title, mime, item.downloaded, item.id, uri)
+                } catch (_: Exception) {}
+            }
+        } else {
+            val projection = arrayOf(
+                MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME,
+                MediaStore.Downloads.MIME_TYPE, MediaStore.Downloads.SIZE,
+                MediaStore.Downloads.DATE_ADDED, MediaStore.Downloads.RELATIVE_PATH
+            )
             val selection = "${MediaStore.Downloads.RELATIVE_PATH} = ?"
             val args = arrayOf(Environment.DIRECTORY_DOWNLOADS + "/FastIDM/")
-            contentResolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection, selection, args, MediaStore.Downloads.DATE_ADDED + " DESC")?.use { cur ->
+            contentResolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection, selection, args,
+                MediaStore.Downloads.DATE_ADDED + " DESC"
+            )?.use { cur ->
                 val idCol = cur.getColumnIndexOrThrow(MediaStore.Downloads._ID)
                 val nameCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.DISPLAY_NAME)
                 val mimeCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.MIME_TYPE)
@@ -118,9 +129,12 @@ class MainActivity : ComponentActivity() {
                 while (cur.moveToNext()) {
                     val id = cur.getLong(idCol)
                     val name = cur.getString(nameCol) ?: "Downloaded file"
-                    if (result.any { it.title == name }) continue
+                    val mime = cur.getString(mimeCol)
+                        ?.takeIf { it != "application/octet-stream" }
+                        ?: URLConnection.guessContentTypeFromName(name)
+                        ?: "application/octet-stream"
                     val uri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
-                    result += HistoryItem(id, name, cur.getString(mimeCol) ?: "application/octet-stream", cur.getLong(sizeCol), cur.getLong(dateCol) * 1000L, uri)
+                    result += HistoryItem(id, name, mime, cur.getLong(sizeCol), cur.getLong(dateCol) * 1000L, uri)
                 }
             }
         }
