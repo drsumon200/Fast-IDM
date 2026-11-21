@@ -35,6 +35,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
 
 data class DownloadItem(val id: Long, val title: String, val status: Int, val downloaded: Long, val total: Long, val reason: Int)
 data class HistoryItem(val id: Long, val title: String, val mime: String, val size: Long, val date: Long, val uri: Uri)
@@ -98,29 +103,59 @@ class MainActivity : ComponentActivity() {
     private fun enqueueDownload(rawUrl: String): String {
         val entered = rawUrl.trim()
         if (isYoutubeUrl(entered)) return "YouTube link detected. Choose audio or video quality in the YouTube Downloader section."
-        val clean = normalizeGoogleDriveUrl(entered)
-        val uri = try { Uri.parse(clean) } catch (_: Exception) { null }
-        if (uri == null || (uri.scheme != "https" && uri.scheme != "http") || uri.host.isNullOrBlank()) return "Enter a valid HTTP or HTTPS URL."
+        if (isGoogleDriveUrl(entered)) {
+            lifecycleScope.launch {
+                try {
+                    val resolved = withContext(Dispatchers.IO) { GoogleDriveResolver.resolve(entered) }
+                    val message = enqueueResolvedDownload(
+                        resolved.url, resolved.cookieHeader,
+                        resolved.contentDisposition, resolved.contentType
+                    )
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        e.message ?: "Google Drive link could not be prepared.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            return "Google Drive link যাচাই করে ডাউনলোড প্রস্তুত করা হচ্ছে…"
+        }
+        return enqueueResolvedDownload(entered, null, null, null)
+    }
+
+    private fun enqueueResolvedDownload(
+        downloadUrl: String,
+        cookieHeader: String?,
+        contentDisposition: String?,
+        contentType: String?
+    ): String {
+        val uri = try { Uri.parse(downloadUrl) } catch (_: Exception) { null }
+        if (uri == null || (uri.scheme != "https" && uri.scheme != "http") || uri.host.isNullOrBlank()) {
+            return "Enter a valid HTTP or HTTPS URL."
+        }
         return try {
             val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-            val isDriveLink = clean != entered
-            val filename = URLUtil.guessFileName(clean, null, null)
-                .replace(Regex("""[\\/:*?"<>|]"""), "_").take(150)
-                .ifBlank { if (isDriveLink) "Google-Drive-download" else "download.bin" }
-            val request = DownloadManager.Request(uri).setTitle(if (isDriveLink) "Google Drive · resolving filename" else filename)
+            val filename = URLUtil.guessFileName(downloadUrl, contentDisposition, contentType)
+                .replace(Regex("""[\\/:*?"<>|]"""), "_").take(150).ifBlank { "download.bin" }
+            val request = DownloadManager.Request(uri)
+                .setTitle(filename)
                 .setDescription("Fast IDM · File download")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setAllowedOverMetered(true).setAllowedOverRoaming(false)
-            if (!isDriveLink) {
-                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "FastIDM/$filename")
-            }
-            // For Drive, let DownloadManager use the server's Content-Disposition filename.
-            // A guessed ".bin" name from the URL query would otherwise override the real extension.
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(false)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "FastIDM/$filename")
+                .addRequestHeader("User-Agent", GoogleDriveResolver.USER_AGENT)
+            if (!cookieHeader.isNullOrBlank()) request.addRequestHeader("Cookie", cookieHeader)
             manager.enqueue(request)
-            val source = if (isDriveLink) "Google Drive file" else "File"
+            val source = if (isGoogleDriveUrl(downloadUrl)) "Google Drive file" else "File"
             "$source added to downloads: $filename"
-        } catch (e: Exception) { "Could not start download: ${e.localizedMessage ?: "unknown error"}" }
+        } catch (e: Exception) {
+            "Could not start download: ${e.localizedMessage ?: "unknown error"}"
+        }
     }
+
     private fun queryHistory(): List<HistoryItem> {
         val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
         val cursor = manager.query(DownloadManager.Query().setFilterByStatus(DownloadManager.STATUS_SUCCESSFUL))
@@ -198,27 +233,10 @@ private fun isVideoPlatformUrl(raw: String): Boolean {
     return supportedHosts.any { host == it || host.endsWith(".$it") }
 }
 
-private fun normalizeGoogleDriveUrl(raw: String): String {
-    val uri = try { Uri.parse(raw.trim()) } catch (_: Exception) { return raw.trim() }
-    val host = uri.host?.lowercase().orEmpty().removePrefix("www.")
-    if (host != "drive.google.com" && host != "docs.google.com" &&
-        host != "drive.usercontent.google.com") return raw.trim()
-
-    val path = uri.path.orEmpty()
-    val pathId = Regex("/file/d/([^/]+)").find(path)?.groupValues?.getOrNull(1)
-        ?: Regex("/document/d/([^/]+)").find(path)?.groupValues?.getOrNull(1)
-        ?: Regex("/spreadsheets/d/([^/]+)").find(path)?.groupValues?.getOrNull(1)
-        ?: Regex("/presentation/d/([^/]+)").find(path)?.groupValues?.getOrNull(1)
-    val id = pathId ?: uri.getQueryParameter("id")
-    if (id.isNullOrBlank()) return raw.trim()
-
-    // Drive's usercontent endpoint handles the download response more reliably
-    // than the old /uc endpoint for shared binary files, including large media.
-    return Uri.parse("https://drive.usercontent.google.com/download").buildUpon()
-        .appendQueryParameter("id", id)
-        .appendQueryParameter("export", "download")
-        .appendQueryParameter("confirm", "t")
-        .build().toString()
+private fun isGoogleDriveUrl(raw: String): Boolean {
+    val host = try { Uri.parse(raw.trim()).host?.lowercase().orEmpty() } catch (_: Exception) { return false }
+    return host == "drive.google.com" || host == "docs.google.com" ||
+        host == "drive.usercontent.google.com"
 }
 
 
