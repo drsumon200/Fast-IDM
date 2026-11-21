@@ -30,6 +30,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
