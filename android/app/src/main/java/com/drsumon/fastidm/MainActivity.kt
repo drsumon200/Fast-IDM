@@ -452,190 +452,233 @@ private fun FastIdmHome(
 
     BackHandler(enabled = false) { }
 
+    val ink = androidx.compose.ui.graphics.Color(0xFFF0F5FF)
+    val muted = androidx.compose.ui.graphics.Color(0xFFD2E2FA)
+    val accent = androidx.compose.ui.graphics.Color(0xFF8CB8FF)
+    val gold = androidx.compose.ui.graphics.Color(0xFFE6C477)
+    val activeFiles = downloads
+        .filter { it.status != DownloadManager.STATUS_SUCCESSFUL }
+        .sortedByDescending { it.id }
+    val videoRunning = ytStatus != "Ready" &&
+        !ytStatus.startsWith("Completed") &&
+        !ytStatus.startsWith("Failed") &&
+        ytStatus != "Canceled"
+    val firstFile = activeFiles.firstOrNull()
+    val firstPercent = firstFile?.let {
+        if (it.total > 0L) (it.downloaded * 100L / it.total).toInt().coerceIn(0, 100) else 0
+    } ?: 0
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                androidx.compose.ui.graphics.Brush.linearGradient(
-                    if (darkMode) listOf(
-                        androidx.compose.ui.graphics.Color(0xFF15121D),
-                        androidx.compose.ui.graphics.Color(0xFF242033),
-                        androidx.compose.ui.graphics.Color(0xFF171E29)
-                    ) else listOf(
-                        androidx.compose.ui.graphics.Color(0xFFDBD6EA),
-                        androidx.compose.ui.graphics.Color(0xFFE9EAF4),
-                        androidx.compose.ui.graphics.Color(0xFFD8E4EE)
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(
+                        androidx.compose.ui.graphics.Color(0xFF082B55),
+                        androidx.compose.ui.graphics.Color(0xFF064078),
+                        androidx.compose.ui.graphics.Color(0xFF031A3B),
+                        androidx.compose.ui.graphics.Color(0xFF020817)
                     )
                 )
             )
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
     ) {
+        Box(
+            Modifier.fillMaxSize().background(
+                androidx.compose.ui.graphics.Brush.radialGradient(
+                    colors = listOf(
+                        androidx.compose.ui.graphics.Color(0xFF3989D2).copy(alpha = 0.62f),
+                        androidx.compose.ui.graphics.Color(0xFF1760A6).copy(alpha = 0.24f),
+                        androidx.compose.ui.graphics.Color.Transparent
+                    ),
+                    radius = 1050f
+                )
+            )
+        )
+
         Row(
-            modifier = Modifier.fillMaxWidth().align(androidx.compose.ui.Alignment.TopCenter),
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(androidx.compose.ui.Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(horizontal = 14.dp, vertical = 5.dp),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
-            TextButton(onClick = { downloads = onRefresh(); history = onHistory(); showHistory = true }) {
-                Text("History", color = purple, style = MaterialTheme.typography.titleSmall)
-            }
             TextButton(onClick = { showSettings = true }) {
-                Text("⚙ Settings", color = purple, style = MaterialTheme.typography.titleSmall)
+                Text("Settings", color = ink, style = MaterialTheme.typography.titleMedium)
+            }
+            TextButton(onClick = {
+                downloads = onRefresh()
+                history = onHistory()
+                showHistory = true
+            }) {
+                Text("History", color = ink, style = MaterialTheme.typography.titleMedium)
             }
         }
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(androidx.compose.ui.Alignment.Center),
+                .align(androidx.compose.ui.Alignment.Center)
+                .padding(horizontal = 22.dp),
             horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
             Surface(
-                color = if (darkMode) androidx.compose.ui.graphics.Color(0xFF292536).copy(alpha = 0.94f) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.58f),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(36.dp),
-                shadowElevation = 6.dp,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                color = androidx.compose.ui.graphics.Color(0xFF5A91D1).copy(alpha = 0.34f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(58.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    3.dp,
+                    androidx.compose.ui.graphics.Color(0xFF79A9F0)
+                ),
+                shadowElevation = 8.dp
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 22.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 19.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        "Download everything",
-                        color = ink,
-                        style = MaterialTheme.typography.headlineSmall
-                    )
-                    Text(
-                        "One place for your links, files and videos",
-                        color = muted.copy(alpha = 0.9f),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = url,
-                            onValueChange = { url = it; message = "" },
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text("Paste a video or file link") },
-                            singleLine = true,
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                                unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                                focusedContainerColor = if (darkMode) androidx.compose.ui.graphics.Color(0xFF393447) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f),
-                                unfocusedContainerColor = if (darkMode) androidx.compose.ui.graphics.Color(0xFF332F40) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.25f)
+                    OutlinedTextField(
+                        value = url,
+                        onValueChange = { url = it; message = "" },
+                        modifier = Modifier.weight(1f),
+                        placeholder = {
+                            Text(
+                                "Paste a download link or search",
+                                color = ink.copy(alpha = 0.88f),
+                                style = MaterialTheme.typography.titleMedium
                             )
+                        },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = ink),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(42.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = ink,
+                            unfocusedTextColor = ink,
+                            cursorColor = ink,
+                            focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                            focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent
                         )
-                        Button(
-                            onClick = {
-                                val candidate = url.trim()
-                                when {
-                                    candidate.isBlank() -> message = "Enter a website, search term, or link."
-                                    isVideoPlatformUrl(candidate) -> {
-                                        quality = "Best"
-                                        showVideoChooser = true
-                                    }
-                                    else -> {
-                                        browserStart = if (candidate.matches(Regex("(?i)^https?://.*"))) candidate
-                                            else "https://www.google.com/search?q=" + Uri.encode(candidate)
-                                        showBrowser = true
-                                    }
+                    )
+                    TextButton(
+                        onClick = {
+                            val candidate = url.trim()
+                            when {
+                                candidate.isBlank() -> message = "Enter a website, search term, or link."
+                                isVideoPlatformUrl(candidate) -> {
+                                    quality = "Best"
+                                    showVideoChooser = true
                                 }
-                            },
-                            modifier = Modifier.height(56.dp),
-                            shape = androidx.compose.foundation.shape.CircleShape,
-                            contentPadding = PaddingValues(horizontal = 18.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = purple)
-                        ) {
-                            Text("Search")
-                        }
-                    }
-                    if (message.isNotBlank()) {
-                        Text(message, color = muted, style = MaterialTheme.typography.bodySmall)
-                    }
-
-                    val activeFiles = downloads
-                        .filter { it.status != DownloadManager.STATUS_SUCCESSFUL }
-                        .sortedByDescending { it.id }
-                        .take(3)
-                    val videoRunning = ytStatus != "Ready" &&
-                        !ytStatus.startsWith("Completed") &&
-                        !ytStatus.startsWith("Failed") &&
-                        ytStatus != "Canceled"
-                    if (activeFiles.isNotEmpty() || videoRunning) {
-                        Text("DOWNLOADS", color = muted, style = MaterialTheme.typography.labelSmall)
-                        if (videoRunning) {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Text("YouTube video", color = ink, style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.weight(1f), maxLines = 1)
-                                    Text(
-                                        if (ytProgress > 0f) "Downloading · ${ytProgress.toInt()}%"
-                                        else "Preparing…",
-                                        color = purple, style = MaterialTheme.typography.labelMedium
-                                    )
-                                }
-                                LinearProgressIndicator(
-                                    progress = { (ytProgress / 100f).coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth().height(5.dp),
-                                    color = purple,
-                                    trackColor = purple.copy(alpha = 0.14f)
-                                )
-                                TextButton(onClick = onStopVideo, contentPadding = PaddingValues(0.dp)) {
-                                    Text("Stop download", color = muted)
+                                else -> {
+                                    browserStart = if (candidate.matches(Regex("(?i)^https?://.*"))) candidate
+                                        else "https://www.google.com/search?q=" + Uri.encode(candidate)
+                                    showBrowser = true
                                 }
                             }
-                        }
-                        activeFiles.forEach { item ->
-                            val pct = if (item.total > 0L)
-                                ((item.downloaded * 100L) / item.total).toInt().coerceIn(0, 100) else -1
-                            val label = when (item.status) {
-                                DownloadManager.STATUS_PENDING -> "Waiting"
-                                DownloadManager.STATUS_RUNNING -> if (pct >= 0) "Downloading · $pct%" else "Downloading…"
-                                DownloadManager.STATUS_PAUSED -> "Unfinished · Paused"
-                                DownloadManager.STATUS_FAILED -> "Unfinished · Failed"
-                                else -> "Unfinished"
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                    Text(item.title, color = ink, style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f), maxLines = 1)
-                                    Text(label, color = purple, style = MaterialTheme.typography.labelSmall)
-                                }
-                                if (item.status == DownloadManager.STATUS_RUNNING) {
-                                    LinearProgressIndicator(
-                                        progress = { if (pct >= 0) pct / 100f else 0f },
-                                        modifier = Modifier.fillMaxWidth().height(5.dp),
-                                        color = purple,
-                                        trackColor = purple.copy(alpha = 0.14f)
-                                    )
-                                    Text(
-                                        "${if (pct >= 0) "$pct% · " else ""}${formatBytes(item.downloaded)} / ${if (item.total > 0L) formatBytes(item.total) else "size unknown"}",
-                                        color = muted, style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    if (ytStatus.startsWith("Failed")) {
-                        Text(ytStatus, color = androidx.compose.ui.graphics.Color(0xFFB3261E),
-                            style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                        },
+                        modifier = Modifier.size(58.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("🔍", style = MaterialTheme.typography.headlineMedium)
                     }
                 }
             }
+
+            if (message.isNotBlank()) {
+                Text(
+                    message,
+                    color = muted,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+
+            if (videoRunning) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "$ytStatus  ·  ${ytProgress.toInt().coerceIn(0, 100)}%",
+                        color = ink,
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    LinearProgressIndicator(
+                        progress = { (ytProgress / 100f).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = accent,
+                        trackColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.20f)
+                    )
+                }
+            } else if (firstFile != null) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "${firstFile.title}  (Downloading $firstPercent%)",
+                        color = ink,
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    LinearProgressIndicator(
+                        progress = { firstPercent / 100f },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = accent,
+                        trackColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.20f)
+                    )
+                }
+            }
+
+            TextButton(
+                onClick = {
+                    downloads = onRefresh()
+                    history = onHistory()
+                    showHistory = true
+                },
+                colors = ButtonDefaults.textButtonColors(
+                    containerColor = androidx.compose.ui.graphics.Color(0xFFB9D0F1).copy(alpha = 0.78f),
+                    contentColor = androidx.compose.ui.graphics.Color(0xFF071B39)
+                ),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 9.dp)
+            ) {
+                Text(
+                    "Show all downloading files",
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
         }
 
-        Text(
-            "Soul Player",
-            modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 8.dp),
-            color = muted.copy(alpha = 0.82f),
-            style = MaterialTheme.typography.labelSmall
-        )
+        Column(
+            modifier = Modifier
+                .align(androidx.compose.ui.Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 26.dp),
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+        ) {
+            Text(
+                "FAST IDM",
+                color = gold,
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+            )
+            Text(
+                "We download everything",
+                color = ink.copy(alpha = 0.94f),
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
     }
 }
 
