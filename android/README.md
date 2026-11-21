@@ -1,38 +1,39 @@
 # Fast IDM — Android Edition
 
-This is the native Android companion app in the `android/` directory. The original desktop/Python project is kept separate.
+Native Kotlin + Jetpack Compose companion app. The original Python desktop project remains untouched.
 
-## Current Android build (0.2.0)
+## Android build 0.3.0
 
-- Native Kotlin + Jetpack Compose UI (no WebView).
+### Direct file downloads
 - Receives shared text links from Android's Share menu and opens HTTP(S) links.
-- Direct HTTP/HTTPS downloads using Android DownloadManager.
-- System download notification; Android manages retries and resuming interrupted transfers where the server/device supports it.
-- Live queue/status/progress/history view.
-- Saves files under **Downloads/FastIDM**.
-- Remove/cancel an active item from the list.
+- Direct HTTP/HTTPS downloads use Android DownloadManager.
+- System download notification, queue, progress and completed history.
+- Saves direct files to `Downloads/FastIDM`; Android's DownloadManager manages retries/resume where server support permits.
 
-## Current limitations
+### Website video and audio downloads
+- Uses yt-dlp Android (`io.github.junkfood02.youtubedl-android:library:0.18.1`) for supported sites.
+- Bundled FFmpeg companion library is initialized to merge separate audio/video streams and extract MP3 audio.
+- Quality presets: Best, 1080p, 720p, 480p, Audio MP3.
+- Runs as an Android foreground data-sync service with an ongoing notification and Stop action.
+- Publishes completed outputs into the public `Downloads/FastIDM` folder on Android 10+ via MediaStore.
 
-This is a usable direct-file downloader, not yet a full desktop IDM/yt-dlp replacement.
-
-- Site extraction for YouTube and other video platforms is **not implemented**.
-- No yt-dlp runtime, FFmpeg merge, format/quality selector, segmented/multi-connection engine, or app-managed pause/resume controls yet.
-- DownloadManager handles transfer lifecycle; behavior depends on server support (including HTTP range support) and Android's system download service.
-- Some servers require cookies, authentication, or custom headers; this UI currently accepts a URL only.
-- Test on a physical Android device before relying on it for important downloads.
+## Important limitations
+- Site support and available resolutions are controlled by yt-dlp extractors and the target service. A site may require cookies/login or block requests; quality presets are ceilings, not guarantees.
+- The library's bundled yt-dlp version is updated through a dependency release; app does not currently expose an in-app yt-dlp updater.
+- Android may stop long-running background work under system restrictions; foreground notification improves reliability but cannot guarantee completion in every vendor ROM/power-saving configuration.
+- Current video service runs one yt-dlp task at a time. Direct DownloadManager tasks may run in parallel.
+- No app-managed persistent database/queue for yt-dlp tasks yet; current video status is stored in app preferences.
+- No browser cookie import, custom headers/proxy UI, playlist batch queue, subtitles, or aria2 multi-connection integration yet.
+- Large native dependencies increase APK size. The yt-dlp Android wrapper bundles Python/yt-dlp/QuickJS; the FFmpeg companion bundles native FFmpeg.
+- Verify functionality on a physical device. CI can compile the app but cannot verify website extraction or real device storage behavior.
 
 ## Build without Android Studio
-
-The GitHub Actions workflow builds a debug APK on pushes to `android-starter` that change `android/**`, or on manual dispatch.
-
 1. Open the repository's **Actions** tab.
 2. Open the latest **Build Fast IDM Android APK** run.
-3. Download the `Fast-IDM-debug` artifact.
-4. Extract it and install `app-debug.apk` on an Android device. You may need to allow installation from that source.
+3. Download the `Fast-IDM-debug` artifact and extract it.
+4. Install `app-debug.apk` on the phone. Allow installation from that source if Android asks.
 
 ## Project setup
-
 - Package: `com.drsumon.fastidm`
 - Minimum Android: API 26 (Android 8.0)
 - Compile/target SDK: 35
