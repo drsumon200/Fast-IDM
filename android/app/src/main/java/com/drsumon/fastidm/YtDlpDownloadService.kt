@@ -41,16 +41,11 @@ class YtDlpDownloadService : Service() {
                 stopSelf()
             }
             ACTION_UPDATE -> {
-                startForeground(NOTIFICATION_ID, buildNotification("Updating yt-dlp NIGHTLY…", 0, true))
-                executor.execute { runYtDlpUpdate(force = true) }
+                executor.execute { runYtDlpUpdate() }
             }
             ACTION_AUTO_UPDATE -> {
-                if (isAutoUpdateDue()) {
-                    startForeground(NOTIFICATION_ID, buildNotification("Checking yt-dlp updates…", 0, true))
-                    executor.execute { runYtDlpUpdate(force = false) }
-                } else {
-                    stopSelf(startId)
-                }
+                if (isAutoUpdateDue()) executor.execute { runYtDlpUpdate() }
+                else stopSelf(startId)
             }
             ACTION_START -> {
                 val url = intent.getStringExtra(EXTRA_URL).orEmpty()
@@ -133,19 +128,22 @@ class YtDlpDownloadService : Service() {
             saveState(finalMessage, 100f)
             notificationManager.notify(NOTIFICATION_ID, buildNotification(finalMessage, 100, false))
             // The download has finished; update now so extraction never waits on the network.
-            if (copied > 0 && isAutoUpdateDue()) runYtDlpUpdate(force = false)
+            if (copied > 0 && isAutoUpdateDue()) runYtDlpUpdate()
         } catch (e: Exception) {
             val message = (e.message ?: "Unknown yt-dlp error").take(220)
             saveState("Failed: $message", 0f)
             notificationManager.notify(NOTIFICATION_ID, buildNotification("Video download failed", 0, false))
         } finally {
-            // Check after this download so the current download never waits for a network update.
-            stopForeground(STOP_FOREGROUND_DETACH)
-            stopSelf()
+            // Keep the service alive if a Settings update was queued behind this download.
+            if (executor.queue.isEmpty()) {
+                stopForeground(STOP_FOREGROUND_DETACH)
+                stopSelf()
+            }
         }
     }
 
-    private fun runYtDlpUpdate(force: Boolean) {
+    private fun runYtDlpUpdate() {
+        startForeground(NOTIFICATION_ID, buildNotification("Updating yt-dlp NIGHTLY…", 0, true))
         try {
             YoutubeDL.getInstance().init(applicationContext)
             val status = YtDlpOperationLock.lock.withLock {
@@ -175,7 +173,7 @@ class YtDlpDownloadService : Service() {
             android.util.Log.w(TAG, message, e)
         } finally {
             stopForeground(STOP_FOREGROUND_DETACH)
-            stopSelf()
+            if (executor.queue.isEmpty()) stopSelf()
         }
     }
 
