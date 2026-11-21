@@ -103,56 +103,44 @@ class MainActivity : ComponentActivity() {
         if (uri == null || (uri.scheme != "https" && uri.scheme != "http") || uri.host.isNullOrBlank()) return "Enter a valid HTTP or HTTPS URL."
         return try {
             val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-            val filename = URLUtil.guessFileName(clean, null, null).replace(Regex("""[\\/:*?"<>|]"""), "_").take(150).ifBlank { "download.bin" }
-            val request = DownloadManager.Request(uri).setTitle(filename).setDescription("Fast IDM · File download")
+            val isDriveLink = clean != entered
+            val filename = URLUtil.guessFileName(clean, null, null)
+                .replace(Regex("""[\\/:*?"<>|]"""), "_").take(150)
+                .ifBlank { if (isDriveLink) "Google-Drive-download" else "download.bin" }
+            val request = DownloadManager.Request(uri).setTitle(if (isDriveLink) "Google Drive · resolving filename" else filename)
+                .setDescription("Fast IDM · File download")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setAllowedOverMetered(true).setAllowedOverRoaming(false)
-                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "FastIDM/$filename")
+            if (!isDriveLink) {
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "FastIDM/$filename")
+            }
+            // For Drive, let DownloadManager use the server's Content-Disposition filename.
+            // A guessed ".bin" name from the URL query would otherwise override the real extension.
             manager.enqueue(request)
-            val source = if (clean != entered) "Google Drive file" else "File"
+            val source = if (isDriveLink) "Google Drive file" else "File"
             "$source added to downloads: $filename"
         } catch (e: Exception) { "Could not start download: ${e.localizedMessage ?: "unknown error"}" }
     }
     private fun queryHistory(): List<HistoryItem> {
+        val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        val cursor = manager.query(DownloadManager.Query().setFilterByStatus(DownloadManager.STATUS_SUCCESSFUL))
+            ?: return emptyList()
         val result = mutableListOf<HistoryItem>()
-        if (Build.VERSION.SDK_INT < 29) {
-            val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-            queryDownloads().filter { it.status == DownloadManager.STATUS_SUCCESSFUL }.forEach { item ->
-                try {
-                    val uri = manager.getUriForDownloadedFile(item.id) ?: return@forEach
-                    val mime = manager.getMimeTypeForDownloadedFile(item.id)
-                        ?: URLConnection.guessContentTypeFromName(item.title)
-                        ?: "application/octet-stream"
-                    result += HistoryItem(-item.id, item.title, mime, item.downloaded, item.id, uri)
-                } catch (_: Exception) {}
-            }
-        } else {
-            val projection = arrayOf(
-                MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME,
-                MediaStore.Downloads.MIME_TYPE, MediaStore.Downloads.SIZE,
-                MediaStore.Downloads.DATE_ADDED, MediaStore.Downloads.RELATIVE_PATH
-            )
-            val selection = "${MediaStore.Downloads.RELATIVE_PATH} = ?"
-            val args = arrayOf(Environment.DIRECTORY_DOWNLOADS + "/FastIDM/")
-            contentResolver.query(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection, selection, args,
-                MediaStore.Downloads.DATE_ADDED + " DESC"
-            )?.use { cur ->
-                val idCol = cur.getColumnIndexOrThrow(MediaStore.Downloads._ID)
-                val nameCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.DISPLAY_NAME)
-                val mimeCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.MIME_TYPE)
-                val sizeCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.SIZE)
-                val dateCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.DATE_ADDED)
-                while (cur.moveToNext()) {
-                    val id = cur.getLong(idCol)
-                    val name = cur.getString(nameCol) ?: "Downloaded file"
-                    val mime = cur.getString(mimeCol)
-                        ?.takeIf { it != "application/octet-stream" }
-                        ?: URLConnection.guessContentTypeFromName(name)
-                        ?: "application/octet-stream"
-                    val uri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
-                    result += HistoryItem(id, name, mime, cur.getLong(sizeCol), cur.getLong(dateCol) * 1000L, uri)
-                }
+        cursor.use { cur ->
+            val idCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_ID)
+            val titleCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE)
+            val mimeCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_MEDIA_TYPE)
+            val sizeCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+            val dateCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP)
+            while (cur.moveToNext()) {
+                val id = cur.getLong(idCol)
+                val uri = manager.getUriForDownloadedFile(id) ?: continue
+                val title = cur.getString(titleCol) ?: "Downloaded file"
+                val mime = cur.getString(mimeCol)
+                    ?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+                    ?: URLConnection.guessContentTypeFromName(title)
+                    ?: "application/octet-stream"
+                result += HistoryItem(id, title, mime, cur.getLong(sizeCol), cur.getLong(dateCol), uri)
             }
         }
         return result.sortedByDescending { it.date }
