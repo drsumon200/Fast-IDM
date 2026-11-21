@@ -6,7 +6,7 @@ Native Kotlin + Jetpack Compose companion app. The original Python desktop proje
 
 ### Direct file downloads
 - Receives shared text links from Android's Share menu and opens HTTP(S) links.
-- Direct HTTP/HTTPS downloads use Android DownloadManager.
+- Direct HTTP/HTTPS downloads use Android DownloadManager. Google Drive shared-file links are resolved first, including redirect and confirmation-token pages, before being handed to DownloadManager.
 - System download notification, queue, progress and completed history.
 - Saves direct files to `Downloads/FastIDM`; Android's DownloadManager manages retries/resume where server support permits.
 
