@@ -12,14 +12,13 @@ concurrency:
   group: android-build-${{ github.ref }}
   cancel-in-progress: true
 
-timeout-minutes: 45
-
 permissions:
   contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
