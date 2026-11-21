@@ -179,7 +179,7 @@ class YtDlpDownloadService : Service() {
 
     private fun isAutoUpdateDue(): Boolean {
         val last = getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_LAST_UPDATE, 0L)
-        return System.currentTimeMillis() - last >= UPDATE_INTERVAL_MS
+        return System.currentTimeMillis() - last >= AUTO_UPDATE_INTERVAL_MS
     }
 
     private fun publishToDownloads(source: File): Boolean {
@@ -278,7 +278,7 @@ class YtDlpDownloadService : Service() {
         const val EXTRA_QUALITY = "extra_quality"
         const val PREFS = "fastidm_ytdlp_state"
         private const val KEY_LAST_UPDATE = "yt_dlp_last_successful_update"
-        private const val UPDATE_INTERVAL_MS = 3L * 24L * 60L * 60L * 1000L
+        const val AUTO_UPDATE_INTERVAL_MS = 3L * 24L * 60L * 60L * 1000L
         private const val TAG = "FastIDM-yt-dlp"
         private const val CHANNEL_ID = "fastidm_video_downloads"
         private const val NOTIFICATION_ID = 4201
