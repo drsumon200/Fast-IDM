@@ -42,23 +42,30 @@ data class HistoryItem(val id: Long, val title: String, val mime: String, val si
 class MainActivity : ComponentActivity() {
     private var sharedUrl by mutableStateOf("")
     private var historyRequestCount by mutableIntStateOf(0)
+    private var darkMode by mutableStateOf(false)
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sharedUrl = extractUrl(intent)
+        darkMode = getSharedPreferences("fastidm_settings", MODE_PRIVATE).getBoolean("dark_mode", false)
         if (intent?.action == ACTION_OPEN_HISTORY) historyRequestCount++
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme()) {
+            MaterialTheme(colorScheme = if (darkMode) darkColorScheme() else lightColorScheme()) {
                 Surface(Modifier.fillMaxSize()) {
                     FastIdmHome(
                         sharedUrl,
                         historyRequestCount,
-                        ::enqueueDownload,
-                        ::queryDownloads,
-                        ::queryHistory,
+                        darkMode,
+                        onNightModeChanged = { enabled ->
+                            darkMode = enabled
+                            getSharedPreferences("fastidm_settings", MODE_PRIVATE).edit().putBoolean("dark_mode", enabled).apply()
+                        },
+                        onEnqueue = ::enqueueDownload,
+                        onRefresh = ::queryDownloads,
+                        onHistory = ::queryHistory,
                         onStartVideo = { url, quality ->
                             val service = Intent(this, YtDlpDownloadService::class.java)
                                 .setAction(YtDlpDownloadService.ACTION_START)
@@ -205,16 +212,18 @@ private fun normalizeGoogleDriveUrl(raw: String): String {
 @Composable
 private fun DownloadHistoryScreen(
     history: List<HistoryItem>,
+    darkMode: Boolean,
     onBack: () -> Unit,
     onPlayAudio: (HistoryItem) -> Unit,
     onPlayVideo: (HistoryItem) -> Unit
 ) {
-    val ink = androidx.compose.ui.graphics.Color(0xFF211936)
-    val muted = androidx.compose.ui.graphics.Color(0xFF716B7D)
-    val purple = androidx.compose.ui.graphics.Color(0xFF6046A5)
+    val ink = if (darkMode) androidx.compose.ui.graphics.Color(0xFFF1EDF8) else androidx.compose.ui.graphics.Color(0xFF211936)
+    val muted = if (darkMode) androidx.compose.ui.graphics.Color(0xFFB8B0C7) else androidx.compose.ui.graphics.Color(0xFF716B7D)
+    val purple = if (darkMode) androidx.compose.ui.graphics.Color(0xFFB9A3FF) else androidx.compose.ui.graphics.Color(0xFF6046A5)
+    val panel = if (darkMode) androidx.compose.ui.graphics.Color(0xFF262232) else androidx.compose.ui.graphics.Color.White
     BackHandler(onBack = onBack)
     Column(
-        modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFFF5F2FA))
+        modifier = Modifier.fillMaxSize().background(if (darkMode) androidx.compose.ui.graphics.Color(0xFF121018) else androidx.compose.ui.graphics.Color(0xFFF5F2FA))
             .statusBarsPadding().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -231,7 +240,7 @@ private fun DownloadHistoryScreen(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
                 items(history, key = { it.id }) { file ->
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = panel)) {
                         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(file.title, color = ink, style = MaterialTheme.typography.titleSmall, maxLines = 2)
                             Text("${file.mime}  ·  ${formatBytes(file.size)}", color = muted, style = MaterialTheme.typography.bodySmall)
@@ -259,6 +268,8 @@ private fun DownloadHistoryScreen(
 private fun FastIdmHome(
     initialUrl: String,
     historyRequestCount: Int,
+    darkMode: Boolean,
+    onNightModeChanged: (Boolean) -> Unit,
     onEnqueue: (String) -> String,
     onRefresh: () -> List<DownloadItem>,
     onHistory: () -> List<HistoryItem>,
@@ -270,6 +281,7 @@ private fun FastIdmHome(
     var url by rememberSaveable { mutableStateOf(initialUrl) }
     var history by remember { mutableStateOf(emptyList<HistoryItem>()) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     var quality by rememberSaveable { mutableStateOf("Best") }
     var showVideoChooser by rememberSaveable { mutableStateOf(false) }
     var message by rememberSaveable { mutableStateOf("") }
@@ -293,11 +305,12 @@ private fun FastIdmHome(
     val purple = androidx.compose.ui.graphics.Color(0xFF6046A5)
     val ink = androidx.compose.ui.graphics.Color(0xFF211936)
     val muted = androidx.compose.ui.graphics.Color(0xFF716B7D)
-    val bg = androidx.compose.ui.graphics.Color(0xFFF5F2FA)
+    val bg = if (darkMode) androidx.compose.ui.graphics.Color(0xFF121018) else androidx.compose.ui.graphics.Color(0xFFF5F2FA)
 
     if (showHistory) {
         DownloadHistoryScreen(
             history = history,
+            darkMode = darkMode,
             onBack = { showHistory = false },
             onPlayAudio = { file ->
                 context.startActivity(
@@ -319,8 +332,18 @@ private fun FastIdmHome(
         return
     }
 
+    if (showSettings) {
+        BasicSettingsScreen(
+            darkMode = darkMode,
+            onNightModeChanged = onNightModeChanged,
+            onBack = { showSettings = false }
+        )
+        return
+    }
+
     if (showBrowser) {
         InAppBrowserScreen(
+            darkMode = darkMode,
             initialTarget = browserStart,
             onBack = { showBrowser = false },
             onDownload = { candidate -> message = onEnqueue(candidate) }
@@ -364,7 +387,11 @@ private fun FastIdmHome(
             .fillMaxSize()
             .background(
                 androidx.compose.ui.graphics.Brush.linearGradient(
-                    listOf(
+                    if (darkMode) listOf(
+                        androidx.compose.ui.graphics.Color(0xFF15121D),
+                        androidx.compose.ui.graphics.Color(0xFF242033),
+                        androidx.compose.ui.graphics.Color(0xFF171E29)
+                    ) else listOf(
                         androidx.compose.ui.graphics.Color(0xFFDBD6EA),
                         androidx.compose.ui.graphics.Color(0xFFE9EAF4),
                         androidx.compose.ui.graphics.Color(0xFFD8E4EE)
@@ -381,7 +408,10 @@ private fun FastIdmHome(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
             TextButton(onClick = { history = onHistory(); showHistory = true }) {
-                Text("History  ↗", color = purple, style = MaterialTheme.typography.titleSmall)
+                Text("History", color = purple, style = MaterialTheme.typography.titleSmall)
+            }
+            TextButton(onClick = { showSettings = true }) {
+                Text("⚙ Settings", color = purple, style = MaterialTheme.typography.titleSmall)
             }
         }
 
@@ -393,9 +423,9 @@ private fun FastIdmHome(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Surface(
-                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.58f),
+                color = if (darkMode) androidx.compose.ui.graphics.Color(0xFF292536).copy(alpha = 0.94f) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.58f),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.72f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (darkMode) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.72f)),
                 shadowElevation = 12.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -423,8 +453,8 @@ private fun FastIdmHome(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = purple,
                                 unfocusedBorderColor = muted.copy(alpha = 0.35f),
-                                focusedContainerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f),
-                                unfocusedContainerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.25f)
+                                focusedContainerColor = if (darkMode) androidx.compose.ui.graphics.Color(0xFF393447) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f),
+                                unfocusedContainerColor = if (darkMode) androidx.compose.ui.graphics.Color(0xFF332F40) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.25f)
                             )
                         )
                         Button(
@@ -531,12 +561,13 @@ private fun formatBytes(bytes: Long): String {
 
 @Composable
 private fun InAppBrowserScreen(
+    darkMode: Boolean,
     initialTarget: String,
     onBack: () -> Unit,
     onDownload: (String) -> Unit
 ) {
-    val purple = androidx.compose.ui.graphics.Color(0xFF6046A5)
-    val ink = androidx.compose.ui.graphics.Color(0xFF211936)
+    val purple = if (darkMode) androidx.compose.ui.graphics.Color(0xFFB9A3FF) else androidx.compose.ui.graphics.Color(0xFF6046A5)
+    val ink = if (darkMode) androidx.compose.ui.graphics.Color(0xFFF1EDF8) else androidx.compose.ui.graphics.Color(0xFF211936)
     val context = LocalContext.current
     var address by rememberSaveable { mutableStateOf(initialTarget) }
     var detectedUrl by remember { mutableStateOf("") }
@@ -560,7 +591,7 @@ private fun InAppBrowserScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFFF5F2FA))
+        Modifier.fillMaxSize().background(if (darkMode) androidx.compose.ui.graphics.Color(0xFF121018) else androidx.compose.ui.graphics.Color(0xFFF5F2FA))
             .statusBarsPadding().navigationBarsPadding()
     ) {
         Row(
@@ -669,5 +700,47 @@ private fun InAppBrowserScreen(
             },
             dismissButton = { TextButton(onClick = { showDownloadPrompt = false; detectedUrl = "" }) { Text("Not now") } }
         )
+    }
+}
+
+
+@Composable
+private fun BasicSettingsScreen(
+    darkMode: Boolean,
+    onNightModeChanged: (Boolean) -> Unit,
+    onBack: () -> Unit
+) {
+    val bg = if (darkMode) androidx.compose.ui.graphics.Color(0xFF121018) else androidx.compose.ui.graphics.Color(0xFFF5F2FA)
+    val panel = if (darkMode) androidx.compose.ui.graphics.Color(0xFF262232) else androidx.compose.ui.graphics.Color.White
+    val ink = if (darkMode) androidx.compose.ui.graphics.Color(0xFFF1EDF8) else androidx.compose.ui.graphics.Color(0xFF211936)
+    val muted = if (darkMode) androidx.compose.ui.graphics.Color(0xFFB8B0C7) else androidx.compose.ui.graphics.Color(0xFF716B7D)
+    val accent = if (darkMode) androidx.compose.ui.graphics.Color(0xFFB9A3FF) else androidx.compose.ui.graphics.Color(0xFF6046A5)
+    BackHandler(onBack = onBack)
+    Column(
+        Modifier.fillMaxSize().background(bg).statusBarsPadding().navigationBarsPadding().padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("← Back", color = accent) }
+            Text("Basic Settings", color = ink, style = MaterialTheme.typography.titleLarge)
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = panel)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Night mode", color = ink, style = MaterialTheme.typography.titleMedium)
+                    Text(if (darkMode) "Dark appearance is enabled" else "Use a darker appearance", color = muted, style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = darkMode, onCheckedChange = onNightModeChanged)
+            }
+        }
+        Text("Appearance changes are saved automatically.", color = muted, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.weight(1f))
+        Text("Fast-IDM · Android", color = muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally))
     }
 }
