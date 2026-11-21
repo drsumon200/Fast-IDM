@@ -43,7 +43,7 @@ public class SoulPlayerActivity extends Activity {
 
     private BgWebView webView;
     private ValueCallback<Uri[]> fileCallback;
-    private boolean isPlayingNow = false;
+    private boolean isPlayingNow = false;\n    private Uri pendingAudioUri;\n    private String pendingAudioTitle = "Downloaded audio";\n    private boolean openedFromFastIdm = false;
 
     private static class BgWebView extends WebView {
         BgWebView(Context ctx) { super(ctx); }
@@ -84,7 +84,7 @@ public class SoulPlayerActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        webView = new BgWebView(this);
+        pendingAudioUri = getIntent() != null ? getIntent().getData() : null;\n        pendingAudioTitle = getIntent() != null ? getIntent().getStringExtra("fastidm_audio_title") : "Downloaded audio";\n        openedFromFastIdm = pendingAudioUri != null;\n\n        webView = new BgWebView(this);
         WebSettings ws = webView.getSettings();
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);
@@ -296,7 +296,7 @@ public class SoulPlayerActivity extends Activity {
             if (path == null) return null;
 
             try {
-                if ("/index.html".equals(path) || "/".equals(path)) {
+                if ("/download".equals(path)) {\n                    String rawUri = u.getQueryParameter("uri");\n                    if (rawUri == null) return null;\n                    Uri mediaUri = Uri.parse(rawUri);\n                    InputStream stream = getContentResolver().openInputStream(mediaUri);\n                    if (stream == null) return null;\n                    String mime = getContentResolver().getType(mediaUri);\n                    if (mime == null) mime = "audio/mpeg";\n                    Map<String, String> headers = new HashMap<>();\n                    headers.put("Access-Control-Allow-Origin", "*");\n                    headers.put("Cache-Control", "no-store");\n                    return new WebResourceResponse(mime, null, 200, "OK", headers, stream);\n                }\n\n                if ("/index.html".equals(path) || "/".equals(path)) {
                     return new WebResourceResponse("text/html", "utf-8", getAssets().open("index.html"));
                 }
 
