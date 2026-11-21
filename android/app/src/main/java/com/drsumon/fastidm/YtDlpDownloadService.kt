@@ -60,27 +60,18 @@ class YtDlpDownloadService : Service() {
             YoutubeDL.getInstance().init(applicationContext)
             FFmpeg.getInstance().init(applicationContext)
 
-            // YouTube frequently changes extraction requirements. Refresh yt-dlp at most
-            // once every 7 days on this background worker, never on the UI thread.
-            val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-            val lastUpdate = prefs.getLong("yt_dlp_last_update", 0L)
-            if (System.currentTimeMillis() - lastUpdate > UPDATE_INTERVAL_MS) {
-                saveState("Updating YouTube support…", 0f)
-                try {
-                    YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._STABLE)
-                    prefs.edit().putLong("yt_dlp_last_update", System.currentTimeMillis()).apply()
-                    saveState("Preparing video download…", 0f)
-                } catch (_: Exception) {
-                    // If offline, keep trying with the bundled extractor.
-                    saveState("Update unavailable; trying bundled downloader…", 0f)
-                }
-            }
-
+            // Do not perform a network update before every first download of the week.
+            // That update can add a long, unpredictable delay before extraction starts.
+            // Use the bundled yt-dlp immediately; extractor updates can be handled separately.
             val cleanUrl = url.trim()
             val request = YoutubeDLRequest(cleanUrl)
                 .addOption("--no-mtime")
                 .addOption("--no-playlist")
                 .addOption("--newline")
+                .addOption("--concurrent-fragments", "4")
+                .addOption("--retries", "3")
+                .addOption("--fragment-retries", "3")
+                .addOption("--socket-timeout", "15")
                 .addOption("-o", File(outputDir, "%(title).150B [%(id)s].%(ext)s").absolutePath)
             when (quality) {
                 "Audio MP3" -> {
@@ -96,8 +87,13 @@ class YtDlpDownloadService : Service() {
                         "360p" -> 360
                         else -> 4320
                     }
-                    val format = if (quality == "Best") "bestvideo+bestaudio/best"
-                        else "bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best"
+                    // Prefer a ready-to-play combined stream first to avoid a mandatory
+                    // separate audio/video merge. Fall back to separate streams when needed.
+                    val format = if (quality == "Best") {
+                        "best/bestvideo+bestaudio"
+                    } else {
+                        "best[height<=${height}]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]"
+                    }
                     request.addOption("-f", format)
                     request.addOption("--merge-output-format", "mkv")
                 }
