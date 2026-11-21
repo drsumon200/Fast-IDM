@@ -40,6 +40,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
+import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDL.UpdateChannel
 
 data class DownloadItem(val id: Long, val title: String, val status: Int, val downloaded: Long, val total: Long, val reason: Int)
 data class HistoryItem(val id: Long, val title: String, val mime: String, val size: Long, val date: Long, val uri: Uri)
@@ -69,6 +71,7 @@ class MainActivity : ComponentActivity() {
                             getSharedPreferences("fastidm_settings", MODE_PRIVATE).edit().putBoolean("dark_mode", enabled).apply()
                         },
                         onEnqueue = ::enqueueDownload,
+                        onManualYtDlpUpdate = ::updateYtDlpManually,
                         onRefresh = ::queryDownloads,
                         onHistory = ::queryHistory,
                         onStartVideo = { url, quality ->
@@ -100,6 +103,31 @@ class MainActivity : ComponentActivity() {
         return Regex("""https?://[^\s<>]+""", RegexOption.IGNORE_CASE)
             .find(raw)?.value?.replace(Regex("[.,)\\]]+$"), "") ?: ""
     }
+    private fun updateYtDlpManually() {
+        lifecycleScope.launch {
+            Toast.makeText(this@MainActivity, "Updating YouTube support in background…", Toast.LENGTH_SHORT).show()
+            try {
+                val status = withContext(Dispatchers.IO) {
+                    YoutubeDL.getInstance().init(applicationContext)
+                    YtDlpOperationLock.withLock {
+                        YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._NIGHTLY)
+                    }
+                }
+                if (status == YoutubeDL.UpdateStatus.DONE ||
+                    status == YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE
+                ) {
+                    getSharedPreferences(YtDlpDownloadService.UPDATE_PREFS, MODE_PRIVATE).edit()
+                        .putLong(YtDlpDownloadService.LAST_SUCCESSFUL_UPDATE, System.currentTimeMillis()).apply()
+                    Toast.makeText(this@MainActivity, "yt-dlp update successful: $status", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "yt-dlp update not completed: $status", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "yt-dlp update failed: ${e.message ?: "network error"}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     private fun enqueueDownload(rawUrl: String): String {
         val entered = rawUrl.trim()
         if (isYoutubeUrl(entered)) return "YouTube link detected. Choose audio or video quality in the YouTube Downloader section."
@@ -367,6 +395,7 @@ private fun FastIdmHome(
     historyRequestCount: Int,
     darkMode: Boolean,
     onNightModeChanged: (Boolean) -> Unit,
+    onManualYtDlpUpdate: () -> Unit,
     onEnqueue: (String) -> String,
     onRefresh: () -> List<DownloadItem>,
     onHistory: () -> List<HistoryItem>,
@@ -437,6 +466,7 @@ private fun FastIdmHome(
         BasicSettingsScreen(
             darkMode = darkMode,
             onNightModeChanged = onNightModeChanged,
+            onUpdateYtDlp = onManualYtDlpUpdate,
             onBack = { showSettings = false }
         )
         return
@@ -906,6 +936,7 @@ private fun InAppBrowserScreen(
 private fun BasicSettingsScreen(
     darkMode: Boolean,
     onNightModeChanged: (Boolean) -> Unit,
+    onUpdateYtDlp: () -> Unit,
     onBack: () -> Unit
 ) {
     val bg = if (darkMode) androidx.compose.ui.graphics.Color(0xFF121018) else androidx.compose.ui.graphics.Color(0xFFF5F2FA)
@@ -935,6 +966,23 @@ private fun BasicSettingsScreen(
                     Text(if (darkMode) "Dark appearance is enabled" else "Use a darker appearance", color = muted, style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = darkMode, onCheckedChange = onNightModeChanged)
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = panel)
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("YouTube support (yt-dlp)", color = ink, style = MaterialTheme.typography.titleMedium)
+                Text("Update the extractor manually when YouTube changes its protection. This runs in the background.", color = muted, style = MaterialTheme.typography.bodySmall)
+                Button(
+                    onClick = onUpdateYtDlp,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = accent)
+                ) { Text("Update yt-dlp now") }
             }
         }
         Text("Appearance changes are saved automatically.", color = muted, style = MaterialTheme.typography.bodySmall)
