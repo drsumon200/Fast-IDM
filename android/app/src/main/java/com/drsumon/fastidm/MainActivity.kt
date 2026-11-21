@@ -196,16 +196,25 @@ private fun isVideoPlatformUrl(raw: String): Boolean {
 
 private fun normalizeGoogleDriveUrl(raw: String): String {
     val uri = try { Uri.parse(raw.trim()) } catch (_: Exception) { return raw.trim() }
-    val host = uri.host?.lowercase().orEmpty()
-    if (host != "drive.google.com" && host != "docs.google.com") return raw.trim()
-    val pathId = Regex("/file/d/([^/]+)").find(uri.path.orEmpty())?.groupValues?.getOrNull(1)
+    val host = uri.host?.lowercase().orEmpty().removePrefix("www.")
+    if (host != "drive.google.com" && host != "docs.google.com" &&
+        host != "drive.usercontent.google.com") return raw.trim()
+
+    val path = uri.path.orEmpty()
+    val pathId = Regex("/file/d/([^/]+)").find(path)?.groupValues?.getOrNull(1)
+        ?: Regex("/document/d/([^/]+)").find(path)?.groupValues?.getOrNull(1)
+        ?: Regex("/spreadsheets/d/([^/]+)").find(path)?.groupValues?.getOrNull(1)
+        ?: Regex("/presentation/d/([^/]+)").find(path)?.groupValues?.getOrNull(1)
     val id = pathId ?: uri.getQueryParameter("id")
-    return if (!id.isNullOrBlank()) {
-        Uri.parse("https://drive.google.com/uc").buildUpon()
-            .appendQueryParameter("export", "download")
-            .appendQueryParameter("id", id)
-            .build().toString()
-    } else raw.trim()
+    if (id.isNullOrBlank()) return raw.trim()
+
+    // Drive's usercontent endpoint handles the download response more reliably
+    // than the old /uc endpoint for shared binary files, including large media.
+    return Uri.parse("https://drive.usercontent.google.com/download").buildUpon()
+        .appendQueryParameter("id", id)
+        .appendQueryParameter("export", "download")
+        .appendQueryParameter("confirm", "t")
+        .build().toString()
 }
 
 
@@ -506,13 +515,6 @@ private fun FastIdmHome(
         ) {
             TextButton(onClick = { showSettings = true }) {
                 Text("Settings", color = ink, style = MaterialTheme.typography.titleMedium)
-            }
-            TextButton(onClick = {
-                downloads = onRefresh()
-                history = onHistory()
-                showHistory = true
-            }) {
-                Text("History", color = ink, style = MaterialTheme.typography.titleMedium)
             }
         }
 
