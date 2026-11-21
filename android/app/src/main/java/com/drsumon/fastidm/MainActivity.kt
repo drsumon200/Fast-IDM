@@ -40,6 +40,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 data class DownloadItem(val id: Long, val title: String, val status: Int, val downloaded: Long, val total: Long, val reason: Int)
 data class HistoryItem(val id: Long, val title: String, val mime: String, val size: Long, val date: Long, val uri: Uri)
@@ -87,6 +93,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        scheduleYtDlpUpdates()
+    }
+    private fun scheduleYtDlpUpdates() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val work = PeriodicWorkRequestBuilder<YtDlpUpdateWorker>(3, TimeUnit.DAYS)
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+            "fastidm-ytdlp-nightly",
+            ExistingPeriodicWorkPolicy.KEEP,
+            work
+        )
     }
     private fun requestYtDlpUpdate() {
         val service = Intent(this, YtDlpDownloadService::class.java).setAction(YtDlpDownloadService.ACTION_UPDATE)
