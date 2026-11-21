@@ -16,6 +16,12 @@ import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
+private object YtDlpOperationLock {
+    val lock = ReentrantLock()
+}
 
 class YtDlpDownloadService : Service() {
     private val executor = Executors.newSingleThreadExecutor()
@@ -33,6 +39,18 @@ class YtDlpDownloadService : Service() {
                 saveState("Canceled", 0f)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
+            }
+            ACTION_UPDATE -> {
+                startForeground(NOTIFICATION_ID, buildNotification("Updating yt-dlp NIGHTLY…", 0, true))
+                executor.execute { runYtDlpUpdate(force = true) }
+            }
+            ACTION_AUTO_UPDATE -> {
+                if (isAutoUpdateDue()) {
+                    startForeground(NOTIFICATION_ID, buildNotification("Checking yt-dlp updates…", 0, true))
+                    executor.execute { runYtDlpUpdate(force = false) }
+                } else {
+                    stopSelf(startId)
+                }
             }
             ACTION_START -> {
                 val url = intent.getStringExtra(EXTRA_URL).orEmpty()
@@ -59,11 +77,10 @@ class YtDlpDownloadService : Service() {
             YoutubeDL.getInstance().init(applicationContext)
             FFmpeg.getInstance().init(applicationContext)
 
-            // Do not perform a network update before every first download of the week.
-            // That update can add a long, unpredictable delay before extraction starts.
-            // Use the bundled yt-dlp immediately; extractor updates can be handled separately.
             val cleanUrl = url.trim()
             val request = YoutubeDLRequest(cleanUrl)
+                // EJS scripts are fetched on demand and matched to the installed yt-dlp version.
+                .addOption("--remote-components", "ejs:github")
                 .addOption("--no-mtime")
                 .addOption("--no-playlist")
                 .addOption("--newline")
@@ -97,10 +114,12 @@ class YtDlpDownloadService : Service() {
                     request.addOption("--merge-output-format", "mkv")
                 }
             }
-            val response = YoutubeDL.getInstance().execute(request, PROCESS_ID) { progress, eta, line ->
-                val pct = progress.coerceIn(0f, 100f)
-                saveState(if (line.isBlank()) "Downloading · ETA ${eta}s" else line.take(180), pct)
-                notificationManager.notify(NOTIFICATION_ID, buildNotification("Downloading · ${pct.toInt()}%", pct.toInt(), true))
+            val response = YtDlpOperationLock.lock.withLock {
+                YoutubeDL.getInstance().execute(request, PROCESS_ID) { progress, eta, line ->
+                    val pct = progress.coerceIn(0f, 100f)
+                    saveState(if (line.isBlank()) "Downloading · ETA ${eta}s" else line.take(180), pct)
+                    notificationManager.notify(NOTIFICATION_ID, buildNotification("Downloading · ${pct.toInt()}%", pct.toInt(), true))
+                }
             }
             if (response.out.isNotBlank()) saveState("Finishing video file…", 99f)
             val files = outputDir.listFiles()?.filter { file ->
@@ -113,6 +132,8 @@ class YtDlpDownloadService : Service() {
                 else "Completed, but could not publish the output file. Check app storage."
             saveState(finalMessage, 100f)
             notificationManager.notify(NOTIFICATION_ID, buildNotification(finalMessage, 100, false))
+            // The download has finished; update now so extraction never waits on the network.
+            if (copied > 0 && isAutoUpdateDue()) runYtDlpUpdate(force = false)
         } catch (e: Exception) {
             val message = (e.message ?: "Unknown yt-dlp error").take(220)
             saveState("Failed: $message", 0f)
@@ -122,6 +143,45 @@ class YtDlpDownloadService : Service() {
             stopForeground(STOP_FOREGROUND_DETACH)
             stopSelf()
         }
+    }
+
+    private fun runYtDlpUpdate(force: Boolean) {
+        try {
+            YoutubeDL.getInstance().init(applicationContext)
+            val status = YtDlpOperationLock.lock.withLock {
+                YoutubeDL.getInstance().updateYoutubeDL(applicationContext, YoutubeDL.UpdateChannel._NIGHTLY)
+            }
+            when (status) {
+                YoutubeDL.UpdateStatus.DONE,
+                YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putLong(KEY_LAST_UPDATE, System.currentTimeMillis()).apply()
+                    val version = YoutubeDL.getInstance().versionName(applicationContext).orEmpty()
+                    val message = if (status == YoutubeDL.UpdateStatus.DONE) "yt-dlp NIGHTLY updated · $version"
+                        else "yt-dlp NIGHTLY is up to date · $version"
+                    saveState(message, 100f)
+                    notificationManager.notify(NOTIFICATION_ID, buildNotification(message, 100, false))
+                }
+                null -> {
+                    val message = "yt-dlp update returned no status; keeping current version"
+                    saveState(message, 0f)
+                    notificationManager.notify(NOTIFICATION_ID, buildNotification(message, 0, false))
+                }
+            }
+        } catch (e: Exception) {
+            val message = "yt-dlp update failed; keeping current version: ${(e.message ?: "network or server error").take(140)}"
+            saveState(message, 0f)
+            notificationManager.notify(NOTIFICATION_ID, buildNotification("yt-dlp update failed", 0, false))
+            android.util.Log.w(TAG, message, e)
+        } finally {
+            stopForeground(STOP_FOREGROUND_DETACH)
+            stopSelf()
+        }
+    }
+
+    private fun isAutoUpdateDue(): Boolean {
+        val last = getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_LAST_UPDATE, 0L)
+        return System.currentTimeMillis() - last >= UPDATE_INTERVAL_MS
     }
 
     private fun publishToDownloads(source: File): Boolean {
@@ -214,9 +274,14 @@ class YtDlpDownloadService : Service() {
     companion object {
         const val ACTION_START = "com.drsumon.fastidm.action.START_YTDLP"
         const val ACTION_STOP = "com.drsumon.fastidm.action.STOP_YTDLP"
+        const val ACTION_UPDATE = "com.drsumon.fastidm.action.UPDATE_YTDLP"
+        const val ACTION_AUTO_UPDATE = "com.drsumon.fastidm.action.AUTO_UPDATE_YTDLP"
         const val EXTRA_URL = "extra_url"
         const val EXTRA_QUALITY = "extra_quality"
         const val PREFS = "fastidm_ytdlp_state"
+        private const val KEY_LAST_UPDATE = "yt_dlp_last_successful_update"
+        private const val UPDATE_INTERVAL_MS = 3L * 24L * 60L * 60L * 1000L
+        private const val TAG = "FastIDM-yt-dlp"
         private const val CHANNEL_ID = "fastidm_video_downloads"
         private const val NOTIFICATION_ID = 4201
         private const val PROCESS_ID = "fastidm-video-process"
