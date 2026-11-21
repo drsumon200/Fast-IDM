@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -111,6 +112,7 @@ private fun FastIdmHome(
     onStopVideo: () -> Unit,
     onCancel: (Long) -> Unit
 ) {
+    val context = LocalContext.current
     var url by rememberSaveable { mutableStateOf(initialUrl) }
     var message by rememberSaveable { mutableStateOf("Paste a direct file URL or share a video link from your browser.") }
     var downloads by remember { mutableStateOf(emptyList<DownloadItem>()) }
@@ -122,8 +124,10 @@ private fun FastIdmHome(
     LaunchedEffect(Unit) {
         while (true) {
             downloads = onRefresh()
-            val prefs = androidx.compose.ui.platform.LocalContext.current // placeholder
-            delay(1200)
+            val prefs = context.getSharedPreferences(YtDlpDownloadService.PREFS, android.content.Context.MODE_PRIVATE)
+            ytStatus = prefs.getString("status", "Ready for video link") ?: "Ready for video link"
+            ytProgress = prefs.getFloat("progress", 0f)
+            delay(900)
         }
     }
     Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
