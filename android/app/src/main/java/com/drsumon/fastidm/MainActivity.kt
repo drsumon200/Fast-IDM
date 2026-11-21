@@ -170,6 +170,22 @@ private fun isYoutubeUrl(raw: String): Boolean {
         host == "youtube-nocookie.com" || host.endsWith(".youtube-nocookie.com")
 }
 
+private val supportedVideoExtensions = setOf(
+    "mp4", "mkv", "avi", "mov", "wmv", "webm", "flv", "f4v", "3gp", "avchd"
+)
+
+private fun isSupportedVideoFile(rawUrl: String, contentDisposition: String? = null): Boolean {
+    val path = try { Uri.parse(rawUrl.trim()).path.orEmpty() } catch (_: Exception) { rawUrl }
+    val dispositionName = contentDisposition
+        ?.let { Regex("""(?i)filename\*?=(?:UTF-8''|["']?)([^"';]+)["']?""").find(it)?.groupValues?.getOrNull(1) }
+        .orEmpty()
+    return listOf(path, dispositionName).any { candidate ->
+        val extension = candidate.substringAfterLast('/', candidate).substringAfterLast('.', "")
+            .substringBefore('?').substringBefore('#').lowercase()
+        extension in supportedVideoExtensions
+    }
+}
+
 private fun isVideoPlatformUrl(raw: String): Boolean {
     val uri = try { Uri.parse(raw.trim()) } catch (_: Exception) { return false }
     val host = uri.host?.lowercase().orEmpty().removePrefix("www.")
@@ -309,7 +325,7 @@ private fun DownloadHistoryScreen(
                             Text("${file.mime}  ·  ${formatBytes(file.size)}", color = muted, style = MaterialTheme.typography.bodySmall)
                             Text(android.text.format.DateFormat.format("dd MMM yyyy, hh:mm a", file.date).toString(), color = muted, style = MaterialTheme.typography.labelSmall)
                             val audio = file.mime.startsWith("audio/")
-                            val video = file.mime.startsWith("video/") || file.title.substringAfterLast('.', "").lowercase() in setOf("mp4", "mkv", "webm", "3gp", "mov", "m4v")
+                            val video = file.mime.startsWith("video/") || isSupportedVideoFile(file.title)
                             if (audio || video) {
                                 Button(
                                     onClick = { if (audio) onPlayAudio(file) else onPlayVideo(file) },
@@ -801,8 +817,9 @@ private fun InAppBrowserScreen(
                             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                 val target = request.url.toString()
                                 val path = request.url.path.orEmpty().lowercase()
-                                val likelyFile = Regex("""\.(pdf|zip|rar|7z|apk|exe|dmg|iso|mp3|m4a|wav|flac|mp4|mkv|webm|jpg|jpeg|png|gif|docx?|xlsx?|pptx?|txt|csv)(?:$|/)""")
-                                    .containsMatchIn(path)
+                                val likelyFile = isSupportedVideoFile(target) ||
+                                    Regex("""\.(pdf|zip|rar|7z|apk|exe|dmg|iso|mp3|m4a|wav|flac|jpg|jpeg|png|gif|docx?|xlsx?|pptx?|txt|csv)(?:$|/)""")
+                                        .containsMatchIn(path)
                                 if (likelyFile && request.isForMainFrame) {
                                     detectedUrl = target
                                     return true
