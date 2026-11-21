@@ -611,7 +611,6 @@ private fun InAppBrowserScreen(
                                     .containsMatchIn(path)
                                 if (likelyFile && request.isForMainFrame) {
                                     detectedUrl = target
-                                    showDownloadPrompt = true
                                     return true
                                 }
                                 return false
@@ -628,21 +627,20 @@ private fun InAppBrowserScreen(
                         }
                         setDownloadListener(DownloadListener { url, _, contentDisposition, mimeType, _ ->
                             detectedUrl = url
-                            showDownloadPrompt = true
                         })
                         loadUrl(initialTarget)
                     }
                 },
                 update = { view -> webView = view }
             )
-            if (showDownloadPrompt) {
+            if (detectedUrl.isNotBlank() && !showDownloadPrompt) {
                 Surface(
                     modifier = Modifier.align(androidx.compose.ui.Alignment.BottomEnd).padding(18.dp),
                     shape = androidx.compose.foundation.shape.CircleShape,
                     color = purple,
                     shadowElevation = 10.dp
                 ) {
-                    TextButton(onClick = { showDownloadPrompt = false; showDownloadPrompt = true }) {
+                    TextButton(onClick = { showDownloadPrompt = true }) {
                         Text("⬇", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleLarge)
                     }
                 }
@@ -652,7 +650,7 @@ private fun InAppBrowserScreen(
 
     if (showDownloadPrompt && detectedUrl.isNotBlank()) {
         AlertDialog(
-            onDismissRequest = { showDownloadPrompt = false },
+            onDismissRequest = { showDownloadPrompt = false; detectedUrl = "" },
             title = { Text("Download detected", color = ink) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -665,10 +663,11 @@ private fun InAppBrowserScreen(
                 TextButton(onClick = {
                     val target = detectedUrl
                     showDownloadPrompt = false
+                    detectedUrl = ""
                     onDownload(target)
                 }) { Text("Download", color = purple) }
             },
-            dismissButton = { TextButton(onClick = { showDownloadPrompt = false }) { Text("Not now") } }
+            dismissButton = { TextButton(onClick = { showDownloadPrompt = false; detectedUrl = "" }) { Text("Not now") } }
         )
     }
 }
