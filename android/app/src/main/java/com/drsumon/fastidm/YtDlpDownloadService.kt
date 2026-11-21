@@ -96,6 +96,7 @@ class YtDlpDownloadService : Service() {
                         "1080p" -> 1080
                         "720p" -> 720
                         "480p" -> 480
+                        "360p" -> 360
                         else -> 4320
                     }
                     val format = if (quality == "Best") "bestvideo+bestaudio/best"
