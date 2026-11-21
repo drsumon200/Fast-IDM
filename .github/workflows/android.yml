@@ -8,6 +8,12 @@ on:
       - "android/**"
       - ".github/workflows/android.yml"
 
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+timeout-minutes: 45
+
 permissions:
   contents: read
 
