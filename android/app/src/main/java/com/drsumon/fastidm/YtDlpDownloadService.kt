@@ -57,6 +57,7 @@ class YtDlpDownloadService : Service() {
         if (!outputDir.exists()) outputDir.mkdirs()
         val before = outputDir.listFiles()?.associate { it.name to it.lastModified() } ?: emptyMap()
         val startedAt = System.currentTimeMillis()
+        var updateAttemptedDuringRun = false
         try {
             YoutubeDL.getInstance().init(applicationContext)
             FFmpeg.getInstance().init(applicationContext)
@@ -112,6 +113,7 @@ class YtDlpDownloadService : Service() {
                 val details = (firstError.message ?: firstError.toString()).lowercase()
                 if (!isOutdatedExtractorError(details)) throw firstError
                 saveState("Updating outdated YouTube support…", 0f)
+                updateAttemptedDuringRun = true
                 try {
                     val updateStatus = YtDlpOperationLock.withLock {
                         YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._NIGHTLY)
@@ -149,7 +151,7 @@ class YtDlpDownloadService : Service() {
             notificationManager.notify(NOTIFICATION_ID, buildNotification("Video download failed", 0, false))
         } finally {
             // Check after this download so the current download never waits for a network update.
-            maybeUpdateYtDlpIfDue()
+            if (!updateAttemptedDuringRun) maybeUpdateYtDlpIfDue()
             stopForeground(STOP_FOREGROUND_DETACH)
             stopSelf()
         }
@@ -162,15 +164,16 @@ class YtDlpDownloadService : Service() {
         if (!force && now - lastSuccess < UPDATE_INTERVAL_MS) return
         try {
             YoutubeDL.getInstance().init(applicationContext)
-            saveState("Checking yt-dlp updates in background…", 0f)
             val status = YtDlpOperationLock.withLock {
                 YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._NIGHTLY)
             }
             when (status) {
                 YoutubeDL.UpdateStatus.DONE,
                 YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE -> {
-                    prefs.edit().putLong(LAST_SUCCESSFUL_UPDATE, now).apply()
-                    saveState("yt-dlp is up to date", 0f)
+                    prefs.edit()
+                        .putLong(LAST_SUCCESSFUL_UPDATE, now)
+                        .putString("last_update_status", status.name)
+                        .apply()
                 }
                 else -> Log.w("FastIDM-YTDLP", "Update not successful: $status")
             }
