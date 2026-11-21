@@ -47,3 +47,5 @@ Native Kotlin + Jetpack Compose companion app. The original Python desktop proje
 The Android app includes a full-screen download history with a visible Back action. Audio items open in the bundled Soul Player; video items open in the in-app Media3 player. The Windows `.exe` / Python desktop app remains unchanged.
 
 APK build workflow: `.github/workflows/android.yml`.
+
+APK build triggered after the playback/history integration updates.
