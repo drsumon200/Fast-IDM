@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_VIEW -> intent.dataString.orEmpty()
             else -> ""
         }
-        return Regex("""https?://[^\\s<>]+""", RegexOption.IGNORE_CASE)
+        return Regex("""https?://[^\s<>]+""", RegexOption.IGNORE_CASE)
             .find(raw)?.value?.replace(Regex("[.,)\\]]+$"), "") ?: ""
     }
     private fun enqueueDownload(rawUrl: String): String {
