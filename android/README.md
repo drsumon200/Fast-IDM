@@ -2,7 +2,7 @@
 
 Native Kotlin + Jetpack Compose companion app. The original Python desktop project remains untouched.
 
-## Android build 0.3.0
+## Android build 0.3.1
 
 ### Direct file downloads
 - Receives shared text links from Android's Share menu and opens HTTP(S) links.
@@ -36,6 +36,7 @@ Native Kotlin + Jetpack Compose companion app. The original Python desktop proje
 ## Project setup
 - Package: `com.drsumon.fastidm`
 - Minimum Android: API 26 (Android 8.0)
+- ABI: arm64-v8a (optimized for modern ARM64 phones; 32-bit and x86 devices are not supported by this APK)
 - Compile/target SDK: 35
 - JDK: 17
 - Gradle: 8.9
