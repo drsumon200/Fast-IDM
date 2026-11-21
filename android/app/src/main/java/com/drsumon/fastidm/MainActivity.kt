@@ -141,11 +141,23 @@ private fun FastIdmHome(
     var message by rememberSaveable { mutableStateOf("Paste a direct file URL or share a video link from your browser.") }
     var downloads by remember { mutableStateOf(emptyList<DownloadItem>()) }
     var quality by rememberSaveable { mutableStateOf("720p") }
+    var showYoutubeChooser by rememberSaveable { mutableStateOf(false) }
+    var lastPromptedYoutubeUrl by rememberSaveable { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
     var ytStatus by remember { mutableStateOf("Ready for video link") }
     var ytProgress by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(initialUrl) { if (initialUrl.isNotBlank()) url = initialUrl }
+    LaunchedEffect(url) {
+        val candidate = url.trim()
+        if (candidate.isNotBlank()) {
+            delay(450)
+            if (isYoutubeUrl(candidate) && candidate != lastPromptedYoutubeUrl) {
+                lastPromptedYoutubeUrl = candidate
+                showYoutubeChooser = true
+            }
+        }
+    }
     LaunchedEffect(Unit) {
         while (true) {
             downloads = onRefresh()
@@ -161,6 +173,33 @@ private fun FastIdmHome(
     val muted = androidx.compose.ui.graphics.Color(0xFF716B7D)
     val pale = androidx.compose.ui.graphics.Color(0xFFF5F2FA)
     val teal = androidx.compose.ui.graphics.Color(0xFF16A995)
+
+    if (showYoutubeChooser) {
+        AlertDialog(
+            onDismissRequest = { showYoutubeChooser = false },
+            title = { Text("Download video as") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("YouTube link detected", color = muted, style = MaterialTheme.typography.bodySmall)
+                    listOf("Audio MP3", "360p", "720p", "1080p", "Best").forEach { option ->
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            RadioButton(selected = quality == option, onClick = { quality = option })
+                            Text(option, modifier = Modifier.weight(1f), color = ink)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showYoutubeChooser = false
+                    onStartVideo(url.trim(), quality)
+                    ytStatus = "Starting $quality download…"
+                    ytProgress = 0f
+                }) { Text("Download") }
+            },
+            dismissButton = { TextButton(onClick = { showYoutubeChooser = false }) { Text("Cancel") } }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -203,7 +242,7 @@ private fun FastIdmHome(
                         }
                         Column {
                             Text("New download", style = MaterialTheme.typography.titleLarge, color = ink)
-                            Text("Direct file link", style = MaterialTheme.typography.bodySmall, color = muted)
+                            Text("Files · Drive · APK · PDF · ZIP · more", style = MaterialTheme.typography.bodySmall, color = muted)
                         }
                     }
                     OutlinedTextField(
@@ -211,12 +250,12 @@ private fun FastIdmHome(
                         onValueChange = { url = it },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Download URL") },
-                        placeholder = { Text("https://example.com/file.mp4") },
+                        placeholder = { Text("Paste or share any file / video link") },
                         minLines = 2,
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
                     )
                     Button(
-                        onClick = { message = onEnqueue(url); downloads = onRefresh() },
+                        onClick = { if (isYoutubeUrl(url.trim())) showYoutubeChooser = true else { message = onEnqueue(url); downloads = onRefresh() } },
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = purple)
@@ -239,15 +278,15 @@ private fun FastIdmHome(
                         }
                         Column {
                             Text("Website video", style = MaterialTheme.typography.titleLarge, color = ink)
-                            Text("Video + audio with yt-dlp & FFmpeg", style = MaterialTheme.typography.bodySmall, color = muted)
+                            Text("Auto-detect YouTube · MP3 · 360p–1080p", style = MaterialTheme.typography.bodySmall, color = muted)
                         }
                     }
                     Box {
                         OutlinedButton(
-                            onClick = { menuOpen = true },
+                            onClick = { showYoutubeChooser = true },
                             modifier = Modifier.fillMaxWidth(),
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
-                        ) { Text("Quality  ·  $quality") }
+                        ) { Text("Choose format  ·  $quality") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             listOf("Best", "1080p", "720p", "480p", "Audio MP3").forEach { item ->
                                 DropdownMenuItem(text = { Text(item) }, onClick = { quality = item; menuOpen = false })
@@ -255,12 +294,12 @@ private fun FastIdmHome(
                         }
                     }
                     Button(
-                        onClick = { onStartVideo(url.trim(), quality); ytStatus = "Starting yt-dlp…"; ytProgress = 0f },
+                        onClick = { showYoutubeChooser = true },
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                         enabled = url.trim().startsWith("http", ignoreCase = true),
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = purple)
-                    ) { Text("▶   Download video") }
+                    ) { Text("▶   Choose download format") }
                     OutlinedButton(
                         onClick = onStopVideo,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
