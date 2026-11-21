@@ -30,7 +30,7 @@ Native Kotlin + Jetpack Compose companion app. The original Python desktop proje
 ## Build without Android Studio
 1. Open the repository's **Actions** tab.
 2. Open the latest **Build Fast IDM Android APK** run.
-3. Download the `Fast-IDM-debug` artifact and extract it.
+3. Download the `Fast-IDM-Android` artifact and extract it.
 4. Install `app-debug.apk` on the phone. Allow installation from that source if Android asks.
 
 ## Project setup
@@ -48,4 +48,4 @@ The Android app includes a full-screen download history with a visible Back acti
 
 APK build workflow: `.github/workflows/android.yml`.
 
-APK build triggered after the playback/history integration updates.
+Video-download notifications show live percentage progress and include a History shortcut. Regular file downloads use Android DownloadManager's native progress notification. The yt-dlp update check is kept off the first-download path to reduce startup delay.
