@@ -89,7 +89,27 @@ object GoogleDriveResolver {
         throw IllegalStateException("Google Drive অতিরিক্ত redirect দিয়েছে; download link resolve করা যায়নি।")
     }
 
-    private fun extractFileId(raw: String): String? {
+    fun isGoogleDrive(raw: String): Boolean {
+        val host = try { Uri.parse(raw.trim()).host?.lowercase().orEmpty().removePrefix("www.") } catch (_: Exception) { return false }
+        return host == "drive.google.com" || host == "docs.google.com" || host == "drive.usercontent.google.com"
+    }
+
+    fun extractFilenameFromDisposition(disposition: String?): String? {
+        if (disposition.isNullOrBlank()) return null
+        val utf8Match = Regex("""filename\*=UTF-8''([^;]+)""", RegexOption.IGNORE_CASE).find(disposition)
+        if (utf8Match != null) {
+            return try {
+                java.net.URLDecoder.decode(utf8Match.groupValues[1], "UTF-8").trim('"', '\'')
+            } catch (_: Exception) { null }
+        }
+        val standardMatch = Regex("""filename=["']?([^"';]+)["']?""", RegexOption.IGNORE_CASE).find(disposition)
+        if (standardMatch != null) {
+            return standardMatch.groupValues[1].trim('"', '\'')
+        }
+        return null
+    }
+
+    fun extractFileId(raw: String): String? {
         val uri = try { Uri.parse(raw.trim()) } catch (_: Exception) { return null }
         val host = uri.host?.lowercase().orEmpty().removePrefix("www.")
         if (host != "drive.google.com" && host != "docs.google.com" &&

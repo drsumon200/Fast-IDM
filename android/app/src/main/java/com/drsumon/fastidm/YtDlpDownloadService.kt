@@ -48,20 +48,21 @@ class YtDlpDownloadService : Service() {
             ACTION_START -> {
                 val url = intent.getStringExtra(EXTRA_URL).orEmpty()
                 val quality = intent.getStringExtra(EXTRA_QUALITY) ?: "720p"
+                val speedLimit = intent.getStringExtra(EXTRA_SPEED_LIMIT) ?: "Unlimited"
                 if (url.isBlank()) {
                     saveState("No URL provided", 0f)
                     stopSelf()
                     return START_NOT_STICKY
                 }
-                startForeground(NOTIFICATION_ID, buildNotification("Preparing video download", 0, true))
-                saveState("Initializing yt-dlp and FFmpeg…", 0f)
-                executor.execute { runDownload(url, quality) }
+                startForeground(NOTIFICATION_ID, buildNotification("Preparing instant video download…", 0, true))
+                saveState("Starting instant download…", 0f)
+                executor.execute { runDownload(url, quality, speedLimit) }
             }
         }
         return START_NOT_STICKY
     }
 
-    private fun runDownload(url: String, quality: String) {
+    private fun runDownload(url: String, quality: String, speedLimit: String = "Unlimited") {
         val outputDir = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "FastIDM")
         if (!outputDir.exists()) outputDir.mkdirs()
         val before = outputDir.listFiles()?.associate { it.name to it.lastModified() } ?: emptyMap()
@@ -72,16 +73,30 @@ class YtDlpDownloadService : Service() {
 
             val cleanUrl = url.trim()
             val request = YoutubeDLRequest(cleanUrl)
-                // EJS scripts are fetched on demand and matched to the installed yt-dlp version.
-                .addOption("--remote-components", "ejs:github")
                 .addOption("--no-mtime")
                 .addOption("--no-playlist")
                 .addOption("--newline")
                 .addOption("--concurrent-fragments", "4")
                 .addOption("--retries", "3")
                 .addOption("--fragment-retries", "3")
-                .addOption("--socket-timeout", "15")
+                .addOption("--socket-timeout", "10")
+                .addOption("--no-check-certificates")
+                .addOption("--http-chunk-size", "10485760")
                 .addOption("-o", File(outputDir, "%(title).150B [%(id)s].%(ext)s").absolutePath)
+                // Instant YouTube Extraction: Use mobile clients to bypass heavy player JS evaluation
+                .addOption("--extractor-args", "youtube:player_client=android,ios,web;player_skip=configs,webpage")
+
+            if (speedLimit != "Unlimited" && speedLimit.isNotBlank()) {
+                val limitArg = when (speedLimit) {
+                    "500 KB/s" -> "500K"
+                    "1 MB/s" -> "1M"
+                    "2 MB/s" -> "2M"
+                    "5 MB/s" -> "5M"
+                    "10 MB/s" -> "10M"
+                    else -> speedLimit.replace("/s", "").replace(" ", "").trim()
+                }
+                request.addOption("--limit-rate", limitArg)
+            }
             when (quality) {
                 "Audio MP3" -> {
                     request.addOption("-x")
@@ -268,6 +283,7 @@ class YtDlpDownloadService : Service() {
         const val ACTION_UPDATE = "com.drsumon.fastidm.action.UPDATE_YTDLP"
         const val EXTRA_URL = "extra_url"
         const val EXTRA_QUALITY = "extra_quality"
+        const val EXTRA_SPEED_LIMIT = "extra_speed_limit"
         const val PREFS = "fastidm_ytdlp_state"
         const val KEY_LAST_UPDATE = "yt_dlp_last_successful_update"
         private const val TAG = "FastIDM-yt-dlp"
