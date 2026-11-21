@@ -38,7 +38,7 @@ class YtDlpUpdateWorker(
                 null -> Result.retry()
             }
         } catch (e: Exception) {
-            android.util.Log.w("FastIDM-yt-dlp", "Periodic NIGHTLY update failed; current version retained", e)
+            android.util.Log.w("FastIDM-yt-dlp", "Periodic NIGHTLY update failed; installed or bundled yt-dlp remains available", e)
             Result.retry()
         }
     }
