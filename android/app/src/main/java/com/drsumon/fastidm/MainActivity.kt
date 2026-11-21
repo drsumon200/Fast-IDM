@@ -212,6 +212,9 @@ private fun normalizeGoogleDriveUrl(raw: String): String {
 @Composable
 private fun DownloadHistoryScreen(
     history: List<HistoryItem>,
+    downloads: List<DownloadItem>,
+    videoStatus: String,
+    videoProgress: Float,
     darkMode: Boolean,
     onBack: () -> Unit,
     onPlayAudio: (HistoryItem) -> Unit,
@@ -231,8 +234,71 @@ private fun DownloadHistoryScreen(
             Spacer(Modifier.width(8.dp))
             Text("Download History", style = MaterialTheme.typography.titleLarge, color = ink)
         }
-        Text("${history.size} downloaded file(s)", color = muted, style = MaterialTheme.typography.bodySmall,
+        Text("${history.size} finished file(s)", color = muted, style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
+
+        val unfinishedDownloads = downloads
+            .filter { it.status != DownloadManager.STATUS_SUCCESSFUL }
+            .sortedByDescending { it.id }
+        val hasVideoActivity = videoStatus != "Ready"
+        if (unfinishedDownloads.isNotEmpty() || hasVideoActivity) {
+            Text("Current / unfinished downloads", color = ink, style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+            LazyColumn(
+                modifier = Modifier.weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 12.dp)
+            ) {
+                if (hasVideoActivity) {
+                    item(key = "yt-dlp-status") {
+                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = panel)) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Video download", color = ink, style = MaterialTheme.typography.titleSmall)
+                                val videoLabel = when {
+                                    videoStatus.startsWith("Completed") -> "Finished"
+                                    videoStatus.startsWith("Failed") || videoStatus == "Canceled" -> "Unfinished · ${videoStatus}"
+                                    videoProgress > 0f -> "Downloading · ${videoProgress.toInt()}%"
+                                    else -> "Unfinished · Preparing"
+                                }
+                                Text(videoLabel, color = muted, style = MaterialTheme.typography.bodySmall)
+                                if (!videoStatus.startsWith("Completed") && !videoStatus.startsWith("Failed") && videoStatus != "Canceled") {
+                                    LinearProgressIndicator(
+                                        progress = { (videoProgress / 100f).coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                Text(videoStatus, color = muted, style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                            }
+                        }
+                    }
+                }
+                items(unfinishedDownloads, key = { "download-${it.id}" }) { item ->
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = panel)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(item.title, color = ink, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                            val percent = if (item.total > 0L) ((item.downloaded * 100L) / item.total).toInt().coerceIn(0, 100) else -1
+                            val stateLabel = when (item.status) {
+                                DownloadManager.STATUS_PENDING -> "Unfinished · Waiting"
+                                DownloadManager.STATUS_RUNNING -> if (percent >= 0) "Downloading · $percent%" else "Downloading…"
+                                DownloadManager.STATUS_PAUSED -> "Unfinished · Paused"
+                                DownloadManager.STATUS_FAILED -> "Unfinished · Failed"
+                                else -> "Unfinished"
+                            }
+                            Text(stateLabel, color = muted, style = MaterialTheme.typography.bodySmall)
+                            if (item.status == DownloadManager.STATUS_RUNNING) {
+                                LinearProgressIndicator(
+                                    progress = { if (percent >= 0) percent / 100f else 0f },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text("${formatBytes(item.downloaded)} / ${if (item.total > 0L) formatBytes(item.total) else "Unknown size"}",
+                                    color = muted, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (history.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
                 Text("No completed downloads yet.", color = muted)
@@ -280,6 +346,7 @@ private fun FastIdmHome(
     val context = LocalContext.current
     var url by rememberSaveable { mutableStateOf(initialUrl) }
     var history by remember { mutableStateOf(emptyList<HistoryItem>()) }
+    var downloads by remember { mutableStateOf(emptyList<DownloadItem>()) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var quality by rememberSaveable { mutableStateOf("Best") }
@@ -291,10 +358,10 @@ private fun FastIdmHome(
     var browserStart by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(initialUrl) { if (initialUrl.isNotBlank()) url = initialUrl }
-    LaunchedEffect(historyRequestCount) { if (historyRequestCount > 0) { history = onHistory(); showHistory = true } }
+    LaunchedEffect(historyRequestCount) { if (historyRequestCount > 0) { downloads = onRefresh(); history = onHistory(); showHistory = true } }
     LaunchedEffect(Unit) {
         while (true) {
-            onRefresh()
+            downloads = onRefresh()
             val prefs = context.getSharedPreferences(YtDlpDownloadService.PREFS, android.content.Context.MODE_PRIVATE)
             ytStatus = prefs.getString("status", "Ready") ?: "Ready"
             ytProgress = prefs.getFloat("progress", 0f)
@@ -310,6 +377,9 @@ private fun FastIdmHome(
     if (showHistory) {
         DownloadHistoryScreen(
             history = history,
+            downloads = downloads,
+            videoStatus = ytStatus,
+            videoProgress = ytProgress,
             darkMode = darkMode,
             onBack = { showHistory = false },
             onPlayAudio = { file ->
@@ -407,7 +477,7 @@ private fun FastIdmHome(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
-            TextButton(onClick = { history = onHistory(); showHistory = true }) {
+            TextButton(onClick = { downloads = onRefresh(); history = onHistory(); showHistory = true }) {
                 Text("History", color = purple, style = MaterialTheme.typography.titleSmall)
             }
             TextButton(onClick = { showSettings = true }) {
