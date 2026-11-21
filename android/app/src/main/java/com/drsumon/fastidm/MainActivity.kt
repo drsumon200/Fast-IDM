@@ -73,18 +73,21 @@ class MainActivity : ComponentActivity() {
             .find(raw)?.value?.replace(Regex("[.,)\\]]+$"), "") ?: ""
     }
     private fun enqueueDownload(rawUrl: String): String {
-        val clean = rawUrl.trim()
+        val entered = rawUrl.trim()
+        if (isYoutubeUrl(entered)) return "YouTube link detected. Choose audio or video quality in the YouTube Downloader section."
+        val clean = normalizeGoogleDriveUrl(entered)
         val uri = try { Uri.parse(clean) } catch (_: Exception) { null }
         if (uri == null || (uri.scheme != "https" && uri.scheme != "http") || uri.host.isNullOrBlank()) return "Enter a valid HTTP or HTTPS URL."
         return try {
             val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
             val filename = URLUtil.guessFileName(clean, null, null).replace(Regex("""[\\/:*?"<>|]"""), "_").take(150).ifBlank { "download.bin" }
-            val request = DownloadManager.Request(uri).setTitle(filename).setDescription("Fast IDM · Downloads")
+            val request = DownloadManager.Request(uri).setTitle(filename).setDescription("Fast IDM · File download")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setAllowedOverMetered(true).setAllowedOverRoaming(false)
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "FastIDM/$filename")
             manager.enqueue(request)
-            "Direct download added: $filename"
+            val source = if (clean != entered) "Google Drive file" else "File"
+            "$source added to downloads: $filename"
         } catch (e: Exception) { "Could not start download: ${e.localizedMessage ?: "unknown error"}" }
     }
     private fun queryDownloads(): List<DownloadItem> {
@@ -102,6 +105,26 @@ class MainActivity : ComponentActivity() {
         }
         return result.sortedByDescending { it.id }
     }
+}
+
+private fun isYoutubeUrl(raw: String): Boolean {
+    val host = try { Uri.parse(raw.trim()).host?.lowercase().orEmpty() } catch (_: Exception) { "" }
+    return host == "youtu.be" || host == "youtube.com" || host.endsWith(".youtube.com") ||
+        host == "youtube-nocookie.com" || host.endsWith(".youtube-nocookie.com")
+}
+
+private fun normalizeGoogleDriveUrl(raw: String): String {
+    val uri = try { Uri.parse(raw.trim()) } catch (_: Exception) { return raw.trim() }
+    val host = uri.host?.lowercase().orEmpty()
+    if (host != "drive.google.com" && host != "docs.google.com") return raw.trim()
+    val pathId = Regex("/file/d/([^/]+)").find(uri.path.orEmpty())?.groupValues?.getOrNull(1)
+    val id = pathId ?: uri.getQueryParameter("id")
+    return if (!id.isNullOrBlank()) {
+        Uri.parse("https://drive.google.com/uc").buildUpon()
+            .appendQueryParameter("export", "download")
+            .appendQueryParameter("id", id)
+            .build().toString()
+    } else raw.trim()
 }
 
 @Composable
