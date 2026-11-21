@@ -120,6 +120,7 @@ private fun FastIdmHome(
     var menuOpen by remember { mutableStateOf(false) }
     var ytStatus by remember { mutableStateOf("Ready for video link") }
     var ytProgress by remember { mutableFloatStateOf(0f) }
+
     LaunchedEffect(initialUrl) { if (initialUrl.isNotBlank()) url = initialUrl }
     LaunchedEffect(Unit) {
         while (true) {
@@ -130,41 +131,171 @@ private fun FastIdmHome(
             delay(900)
         }
     }
-    Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Fast IDM", style = MaterialTheme.typography.headlineLarge)
-        Text("Android Edition · 0.3.1", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text("New download", style = MaterialTheme.typography.titleLarge)
-                OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("URL") }, placeholder = { Text("https://example.com/file.mp4") }, minLines = 2)
-                Button(onClick = { message = onEnqueue(url); downloads = onRefresh() }, modifier = Modifier.fillMaxWidth()) { Text("Direct file download") }
-                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+    val purple = androidx.compose.ui.graphics.Color(0xFF6046A5)
+    val ink = androidx.compose.ui.graphics.Color(0xFF211936)
+    val muted = androidx.compose.ui.graphics.Color(0xFF716B7D)
+    val pale = androidx.compose.ui.graphics.Color(0xFFF5F2FA)
+    val teal = androidx.compose.ui.graphics.Color(0xFF16A995)
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    listOf(androidx.compose.ui.graphics.Color(0xFFFBFAFE), pale)
+                )
+            ),
+        contentPadding = PaddingValues(start = 18.dp, top = 20.dp, end = 18.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("FAST IDM", style = MaterialTheme.typography.headlineMedium, color = ink)
+                    Text("Your downloads, one place.", style = MaterialTheme.typography.bodyMedium, color = muted)
+                }
+                Surface(color = androidx.compose.ui.graphics.Color(0xFFE9E2F7), shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)) {
+                    Text("ANDROID  •  0.4.0", modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp), color = purple, style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
-        Card {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Website video download", style = MaterialTheme.typography.titleLarge)
-                Text("Uses yt-dlp + FFmpeg for supported websites and separate audio/video streams.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Box {
-                    OutlinedButton(onClick = { menuOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Quality: $quality") }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        listOf("Best", "1080p", "720p", "480p", "Audio MP3").forEach { item ->
-                            DropdownMenuItem(text = { Text(item) }, onClick = { quality = item; menuOpen = false })
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Surface(color = androidx.compose.ui.graphics.Color(0xFFECE6F8), shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
+                            Text("↓", modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp), color = purple, style = MaterialTheme.typography.titleLarge)
+                        }
+                        Column {
+                            Text("New download", style = MaterialTheme.typography.titleLarge, color = ink)
+                            Text("Direct file link", style = MaterialTheme.typography.bodySmall, color = muted)
                         }
                     }
+                    OutlinedTextField(
+                        value = url,
+                        onValueChange = { url = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Download URL") },
+                        placeholder = { Text("https://example.com/file.mp4") },
+                        minLines = 2,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                    )
+                    Button(
+                        onClick = { message = onEnqueue(url); downloads = onRefresh() },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = purple)
+                    ) { Text("↓   Download file", style = MaterialTheme.typography.titleSmall) }
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = muted)
                 }
-                Button(onClick = { onStartVideo(url.trim(), quality); ytStatus = "Starting yt-dlp…"; ytProgress = 0f }, modifier = Modifier.fillMaxWidth(), enabled = url.startsWith("http")) { Text("Download video") }
-                OutlinedButton(onClick = onStopVideo, modifier = Modifier.fillMaxWidth()) { Text("Stop video download") }
-                LinearProgressIndicator(progress = { ytProgress / 100f }, modifier = Modifier.fillMaxWidth())
-                Text(ytStatus, style = MaterialTheme.typography.bodySmall)
             }
         }
-        Text("Downloads", style = MaterialTheme.typography.titleLarge)
-        if (downloads.isEmpty()) Text("No direct downloads yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            items(downloads, key = { it.id }) { item -> DownloadCard(item) { onCancel(item.id); downloads = onRefresh() } }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFFEDE8F5))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Surface(color = androidx.compose.ui.graphics.Color.White, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
+                            Text("▶", modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp), color = purple, style = MaterialTheme.typography.titleMedium)
+                        }
+                        Column {
+                            Text("Website video", style = MaterialTheme.typography.titleLarge, color = ink)
+                            Text("Video + audio with yt-dlp & FFmpeg", style = MaterialTheme.typography.bodySmall, color = muted)
+                        }
+                    }
+                    Box {
+                        OutlinedButton(
+                            onClick = { menuOpen = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
+                        ) { Text("Quality  ·  $quality") }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            listOf("Best", "1080p", "720p", "480p", "Audio MP3").forEach { item ->
+                                DropdownMenuItem(text = { Text(item) }, onClick = { quality = item; menuOpen = false })
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = { onStartVideo(url.trim(), quality); ytStatus = "Starting yt-dlp…"; ytProgress = 0f },
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        enabled = url.trim().startsWith("http", ignoreCase = true),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = purple)
+                    ) { Text("▶   Download video") }
+                    OutlinedButton(
+                        onClick = onStopVideo,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                    ) { Text("Stop video download", color = purple) }
+                    LinearProgressIndicator(
+                        progress = { (ytProgress / 100f).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = teal,
+                        trackColor = androidx.compose.ui.graphics.Color(0xFFD8D0E5)
+                    )
+                    Text(ytStatus, style = MaterialTheme.typography.bodySmall, color = muted)
+                }
+            }
         }
-        Text("Video engine and format availability depend on the target website. YouTube and some sites may block requests or require cookies.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Downloads", style = MaterialTheme.typography.titleLarge, color = ink)
+                    Text("${downloads.size} item(s)", style = MaterialTheme.typography.bodySmall, color = muted)
+                }
+                Surface(color = androidx.compose.ui.graphics.Color(0xFFE5F5F1), shape = androidx.compose.foundation.shape.RoundedCornerShape(50)) {
+                    Text("LIVE", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = teal, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+
+        if (downloads.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("↓", color = purple, style = MaterialTheme.typography.headlineLarge)
+                        Text("Nothing here yet", style = MaterialTheme.typography.titleMedium, color = ink)
+                        Text("Your direct downloads will appear here.", style = MaterialTheme.typography.bodySmall, color = muted)
+                    }
+                }
+            }
+        } else {
+            items(downloads, key = { it.id }) { item ->
+                DownloadCard(item) { onCancel(item.id); downloads = onRefresh() }
+            }
+        }
+
+        item {
+            Text(
+                "Downloads are saved in Downloads/FastIDM. Website support depends on the source site.",
+                style = MaterialTheme.typography.bodySmall,
+                color = muted
+            )
+        }
     }
 }
 
@@ -179,15 +310,33 @@ private fun DownloadCard(item: DownloadItem, onCancel: () -> Unit) {
         DownloadManager.STATUS_FAILED -> "Failed (code ${item.reason})"
         else -> "Checking"
     }
-    Card {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2)
-            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val statusColor = when (item.status) {
+        DownloadManager.STATUS_SUCCESSFUL -> androidx.compose.ui.graphics.Color(0xFF16866F)
+        DownloadManager.STATUS_FAILED -> androidx.compose.ui.graphics.Color(0xFFB3261E)
+        else -> androidx.compose.ui.graphics.Color(0xFF6046A5)
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, color = androidx.compose.ui.graphics.Color(0xFF211936))
+            Text(label, style = MaterialTheme.typography.labelMedium, color = statusColor)
             if (item.status == DownloadManager.STATUS_RUNNING || item.status == DownloadManager.STATUS_PAUSED) {
-                LinearProgressIndicator(progress = { if (item.total > 0) percent / 100f else 0f }, modifier = Modifier.fillMaxWidth())
-                Text(if (item.total > 0) "$percent% · ${formatBytes(item.downloaded)} / ${formatBytes(item.total)}" else "${formatBytes(item.downloaded)} downloaded", style = MaterialTheme.typography.labelSmall)
+                LinearProgressIndicator(
+                    progress = { if (item.total > 0) percent / 100f else 0f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = androidx.compose.ui.graphics.Color(0xFF16A995)
+                )
+                Text(
+                    if (item.total > 0) "$percent%  ·  ${formatBytes(item.downloaded)} / ${formatBytes(item.total)}" else "${formatBytes(item.downloaded)} downloaded",
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
-            if (item.status != DownloadManager.STATUS_SUCCESSFUL) TextButton(onClick = onCancel) { Text("Remove") }
+            if (item.status != DownloadManager.STATUS_SUCCESSFUL) {
+                TextButton(onClick = onCancel) { Text("Remove", color = androidx.compose.ui.graphics.Color(0xFF6046A5)) }
+            }
         }
     }
 }
