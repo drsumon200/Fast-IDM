@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
             val request = DownloadManager.Request(uri).setTitle(filename).setDescription("Fast IDM · Downloads")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setAllowedOverMetered(true).setAllowedOverRoaming(false)
-                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS + "/FastIDM", filename)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "FastIDM/$filename")
             manager.enqueue(request)
             "Direct download added: $filename"
         } catch (e: Exception) { "Could not start download: ${e.localizedMessage ?: "unknown error"}" }
