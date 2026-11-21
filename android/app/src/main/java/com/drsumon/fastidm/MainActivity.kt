@@ -34,10 +34,12 @@ data class HistoryItem(val id: Long, val title: String, val mime: String, val si
 
 class MainActivity : ComponentActivity() {
     private var sharedUrl by mutableStateOf("")
+    private var historyRequestCount by mutableIntStateOf(0)
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sharedUrl = extractUrl(intent)
+        if (intent?.action == ACTION_OPEN_HISTORY) historyRequestCount++
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -46,6 +48,7 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize()) {
                     FastIdmHome(
                         sharedUrl,
+                        historyRequestCount,
                         ::enqueueDownload,
                         ::queryDownloads,
                         ::queryHistory,
@@ -66,7 +69,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent); setIntent(intent); sharedUrl = extractUrl(intent)
+        super.onNewIntent(intent); setIntent(intent); sharedUrl = extractUrl(intent); if (intent.action == ACTION_OPEN_HISTORY) historyRequestCount++
     }
     private fun extractUrl(intent: Intent?): String {
         if (intent == null) return ""
@@ -156,6 +159,7 @@ class MainActivity : ComponentActivity() {
         }
         return result.sortedByDescending { it.id }
     }
+    companion object { const val ACTION_OPEN_HISTORY = "com.drsumon.fastidm.action.OPEN_HISTORY" }
 }
 
 private fun isYoutubeUrl(raw: String): Boolean {
@@ -247,6 +251,7 @@ private fun DownloadHistoryScreen(
 @Composable
 private fun FastIdmHome(
     initialUrl: String,
+    historyRequestCount: Int,
     onEnqueue: (String) -> String,
     onRefresh: () -> List<DownloadItem>,
     onHistory: () -> List<HistoryItem>,
@@ -265,6 +270,7 @@ private fun FastIdmHome(
     var ytProgress by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(initialUrl) { if (initialUrl.isNotBlank()) url = initialUrl }
+    LaunchedEffect(historyRequestCount) { if (historyRequestCount > 0) { history = onHistory(); showHistory = true } }
     LaunchedEffect(Unit) {
         while (true) {
             onRefresh()
