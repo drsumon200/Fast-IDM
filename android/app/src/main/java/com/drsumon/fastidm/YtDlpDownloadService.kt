@@ -58,7 +58,22 @@ class YtDlpDownloadService : Service() {
         try {
             YoutubeDL.getInstance().init(applicationContext)
             FFmpeg.getInstance().init(applicationContext)
-            val request = YoutubeDLRequest(url)
+
+            // Refresh the bundled yt-dlp binary from the stable channel before downloading.
+            // If the device is offline or the update host is unavailable, keep using the
+            // bundled version and let the actual download report its own error.
+            saveState("Checking yt-dlp updates…", 0f)
+            try {
+                YoutubeDL.getInstance().updateYoutubeDL(
+                    applicationContext,
+                    YoutubeDL.UpdateChannel._STABLE
+                )
+            } catch (updateError: Exception) {
+                saveState("Could not update yt-dlp; trying bundled version…", 0f)
+            }
+
+            val cleanUrl = url.trim()
+            val request = YoutubeDLRequest(cleanUrl)
                 .addOption("--no-mtime")
                 .addOption("--no-playlist")
                 .addOption("--newline")
