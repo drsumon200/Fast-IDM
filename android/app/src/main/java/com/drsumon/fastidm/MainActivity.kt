@@ -203,7 +203,6 @@ private fun FastIdmHome(
     val teal = androidx.compose.ui.graphics.Color(0xFF16A995)
 
     if (showHistory) {
-        history = onHistory()
         AlertDialog(
             onDismissRequest = { showHistory = false },
             title = { Text("Download history") },
