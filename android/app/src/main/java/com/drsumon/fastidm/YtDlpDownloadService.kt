@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import com.yausername.youtubedl_android.YoutubeDL.UpdateChannel
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -59,7 +60,22 @@ class YtDlpDownloadService : Service() {
             YoutubeDL.getInstance().init(applicationContext)
             FFmpeg.getInstance().init(applicationContext)
 
-            // Avoid a network update check on the critical path; it delayed the first download.
+            // YouTube frequently changes extraction requirements. Refresh yt-dlp at most
+            // once every 7 days on this background worker, never on the UI thread.
+            val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+            val lastUpdate = prefs.getLong("yt_dlp_last_update", 0L)
+            if (System.currentTimeMillis() - lastUpdate > UPDATE_INTERVAL_MS) {
+                saveState("Updating YouTube support…", 0f)
+                try {
+                    YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._STABLE)
+                    prefs.edit().putLong("yt_dlp_last_update", System.currentTimeMillis()).apply()
+                    saveState("Preparing video download…", 0f)
+                } catch (_: Exception) {
+                    // If offline, keep trying with the bundled extractor.
+                    saveState("Update unavailable; trying bundled downloader…", 0f)
+                }
+            }
+
             val cleanUrl = url.trim()
             val request = YoutubeDLRequest(cleanUrl)
                 .addOption("--no-mtime")
@@ -208,5 +224,6 @@ class YtDlpDownloadService : Service() {
         private const val CHANNEL_ID = "fastidm_video_downloads"
         private const val NOTIFICATION_ID = 4201
         private const val PROCESS_ID = "fastidm-video-process"
+        private const val UPDATE_INTERVAL_MS = 7L * 24L * 60L * 60L * 1000L
     }
 }
