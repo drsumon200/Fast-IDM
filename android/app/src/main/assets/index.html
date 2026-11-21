@@ -1131,6 +1131,21 @@
         rebuildQ(); if (!A.curId && A.tracks.length) { A.select(A.tracks[0].id, false); syncNP(); }
         renderAll(); renderFolders(); toast(`Added ${n} song${n > 1 ? 's' : ''}`);
       }
+      window.openFastIdmAudio = async function (streamUrl, title) {
+        try {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const response = await fetch(streamUrl);
+          if (!response.ok) throw new Error('Could not read downloaded audio');
+          const blob = await response.blob();
+          const file = new File([blob], title || 'downloaded-audio.mp3', { type: blob.type || 'audio/mpeg' });
+          await importFiles([file]);
+          const track = A.tracks.find(t => t.fileName === file.name || t.title === file.name);
+          if (track) playId(track.id, true);
+          else toast('Audio imported. Select it from the library.');
+        } catch (error) {
+          toast('Could not open audio: ' + (error.message || 'unknown error'));
+        }
+      };
       $('fileInput').onchange = () => { importFiles($('fileInput').files); $('fileInput').value = ''; };
       $('folderInput').onchange = () => { importFiles($('folderInput').files); $('folderInput').value = ''; };
 
