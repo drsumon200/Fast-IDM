@@ -16,6 +16,7 @@ import android.webkit.WebSettings
 import android.webkit.DownloadListener
 import android.webkit.WebResourceRequest
 import androidx.compose.ui.viewinterop.AndroidView
+import java.io.File
 import java.net.URLConnection
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
