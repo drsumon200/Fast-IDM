@@ -59,26 +59,7 @@ class YtDlpDownloadService : Service() {
             YoutubeDL.getInstance().init(applicationContext)
             FFmpeg.getInstance().init(applicationContext)
 
-            // Updating yt-dlp can delay the start of every download if done each time.
-            // Check for a stable update at most once every 7 days instead.
-            val updatePrefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-            val now = System.currentTimeMillis()
-            val lastUpdateCheck = updatePrefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
-            if (now - lastUpdateCheck >= UPDATE_CHECK_INTERVAL_MS) {
-                saveState("Checking yt-dlp updates…", 0f)
-                try {
-                    YoutubeDL.getInstance().updateYoutubeDL(
-                        applicationContext,
-                        YoutubeDL.UpdateChannel._STABLE
-                    )
-                    updatePrefs.edit().putLong(KEY_LAST_UPDATE_CHECK, now).apply()
-                } catch (updateError: Exception) {
-                    // Retry tomorrow if the update server is temporarily unavailable.
-                    updatePrefs.edit().putLong(KEY_LAST_UPDATE_CHECK, now - UPDATE_CHECK_INTERVAL_MS + UPDATE_RETRY_INTERVAL_MS).apply()
-                    saveState("Using installed yt-dlp version…", 0f)
-                }
-            }
-
+            // Avoid a network update check on the critical path; it delayed the first download.
             val cleanUrl = url.trim()
             val request = YoutubeDLRequest(cleanUrl)
                 .addOption("--no-mtime")
@@ -197,12 +178,21 @@ class YtDlpDownloadService : Service() {
             .setOnlyAlertOnce(true)
             .setOngoing(ongoing)
         if (ongoing) {
-            builder.setProgress(100, progress, progress == 0)
+            builder.setProgress(100, progress.coerceIn(0, 100), progress == 0)
+            .setSubText(if (progress > 0) "$progress% complete" else "Preparing")
             val stopIntent = PendingIntent.getService(
                 this, 2, Intent(this, YtDlpDownloadService::class.java).setAction(ACTION_STOP),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopIntent)
+            val historyIntent = PendingIntent.getActivity(
+                this, 3,
+                Intent(this, MainActivity::class.java)
+                    .setAction(MainActivity.ACTION_OPEN_HISTORY)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(android.R.drawable.ic_menu_recent_history, "History", historyIntent)
         } else builder.setProgress(0, 0, false)
         return builder.build()
     }
@@ -218,8 +208,5 @@ class YtDlpDownloadService : Service() {
         private const val CHANNEL_ID = "fastidm_video_downloads"
         private const val NOTIFICATION_ID = 4201
         private const val PROCESS_ID = "fastidm-video-process"
-        private const val KEY_LAST_UPDATE_CHECK = "yt_dlp_last_update_check"
-        private const val UPDATE_CHECK_INTERVAL_MS = 7L * 24 * 60 * 60 * 1000
-        private const val UPDATE_RETRY_INTERVAL_MS = 24L * 60 * 60 * 1000
     }
 }
