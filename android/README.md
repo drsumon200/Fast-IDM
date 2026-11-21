@@ -40,3 +40,8 @@ Native Kotlin + Jetpack Compose companion app. The original Python desktop proje
 - Compile/target SDK: 35
 - JDK: 17
 - Gradle: 8.9
+
+
+## Download history and playback
+
+The Android app includes a full-screen download history with a visible Back action. Audio items open in the bundled Soul Player; video items open in the in-app Media3 player. The Windows `.exe` / Python desktop app remains unchanged.

@@ -36,6 +36,7 @@
                 <data android:scheme="https" />
             </intent-filter>
         </activity>
+        <activity android:name=".VideoPlayerActivity" android:exported="false" />
         <activity
             android:name=".SoulPlayerActivity"
             android:exported="false"

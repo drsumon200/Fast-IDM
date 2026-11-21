@@ -1,0 +1,40 @@
+name: Build Fast IDM Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "android-starter", "android-history-player-back" ]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build debug APK
+        run: gradle --no-daemon -p android assembleDebug
+      - name: Rename APK for easy installation
+        run: cp "android/app/build/outputs/apk/debug/app-debug.apk" "android/app/build/outputs/apk/debug/Fast IDM.apk"
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fast-IDM-Android
+          path: "android/app/build/outputs/apk/debug/Fast IDM.apk"
+          if-no-files-found: error

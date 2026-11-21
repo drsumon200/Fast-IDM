@@ -44,6 +44,9 @@ public class SoulPlayerActivity extends Activity {
     private BgWebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private boolean isPlayingNow = false;
+    private Uri pendingAudioUri;
+    private String pendingAudioTitle = "Downloaded audio";
+    private boolean openedFromFastIdm = false;
 
     private static class BgWebView extends WebView {
         BgWebView(Context ctx) { super(ctx); }
@@ -83,6 +86,10 @@ public class SoulPlayerActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        pendingAudioUri = getIntent() != null ? getIntent().getData() : null;
+        pendingAudioTitle = getIntent() != null ? getIntent().getStringExtra("fastidm_audio_title") : "Downloaded audio";
+        openedFromFastIdm = pendingAudioUri != null;
 
         webView = new BgWebView(this);
         WebSettings ws = webView.getSettings();
@@ -138,7 +145,8 @@ public class SoulPlayerActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (isPlayingNow) moveTaskToBack(true);
+        if (openedFromFastIdm) finish();
+        else if (isPlayingNow) moveTaskToBack(true);
         else super.onBackPressed();
     }
 
@@ -289,6 +297,17 @@ public class SoulPlayerActivity extends Activity {
 
     private class LocalAssetClient extends WebViewClient {
         @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            if (pendingAudioUri != null) {
+                String streamUrl = "https://" + HOST + "/download?uri=" + Uri.encode(pendingAudioUri.toString());
+                String js = "if(window.openFastIdmAudio) { window.openFastIdmAudio(" + JSONObject.quote(streamUrl) + "," + JSONObject.quote(pendingAudioTitle == null ? "Downloaded audio" : pendingAudioTitle) + "); }";
+                view.evaluateJavascript(js, null);
+                pendingAudioUri = null;
+            }
+        }
+
+        @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
             Uri u = req.getUrl();
             if (u == null || !HOST.equals(u.getHost())) return super.shouldInterceptRequest(view, req);
@@ -296,6 +315,20 @@ public class SoulPlayerActivity extends Activity {
             if (path == null) return null;
 
             try {
+                if ("/download".equals(path)) {
+                    String rawUri = u.getQueryParameter("uri");
+                    if (rawUri == null) return null;
+                    Uri mediaUri = Uri.parse(rawUri);
+                    InputStream stream = getContentResolver().openInputStream(mediaUri);
+                    if (stream == null) return null;
+                    String mime = getContentResolver().getType(mediaUri);
+                    if (mime == null) mime = "audio/mpeg";
+                    Map<String, String> headers = new HashMap<>();
+                    headers.put("Access-Control-Allow-Origin", "*");
+                    headers.put("Cache-Control", "no-store");
+                    return new WebResourceResponse(mime, null, 200, "OK", headers, stream);
+                }
+
                 if ("/index.html".equals(path) || "/".equals(path)) {
                     return new WebResourceResponse("text/html", "utf-8", getAssets().open("index.html"));
                 }
