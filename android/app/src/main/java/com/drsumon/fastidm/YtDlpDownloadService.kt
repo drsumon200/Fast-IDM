@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-private object YtDlpOperationLock {
+internal object YtDlpOperationLock {
     val lock = ReentrantLock()
 }
 
@@ -44,10 +44,6 @@ class YtDlpDownloadService : Service() {
             }
             ACTION_UPDATE -> {
                 executor.execute { runYtDlpUpdate() }
-            }
-            ACTION_AUTO_UPDATE -> {
-                if (isAutoUpdateDue()) executor.execute { runYtDlpUpdate() }
-                else stopSelf(startId)
             }
             ACTION_START -> {
                 val url = intent.getStringExtra(EXTRA_URL).orEmpty()
@@ -129,8 +125,6 @@ class YtDlpDownloadService : Service() {
                 else "Completed, but could not publish the output file. Check app storage."
             saveState(finalMessage, 100f)
             notificationManager.notify(NOTIFICATION_ID, buildNotification(finalMessage, 100, false))
-            // The download has finished; update now so extraction never waits on the network.
-            if (copied > 0 && isAutoUpdateDue()) runYtDlpUpdate()
         } catch (e: Exception) {
             val message = (e.message ?: "Unknown yt-dlp error").take(220)
             saveState("Failed: $message", 0f)
@@ -179,11 +173,6 @@ class YtDlpDownloadService : Service() {
                 stopSelf()
             }
         }
-    }
-
-    private fun isAutoUpdateDue(): Boolean {
-        val last = getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_LAST_UPDATE, 0L)
-        return System.currentTimeMillis() - last >= AUTO_UPDATE_INTERVAL_MS
     }
 
     private fun publishToDownloads(source: File): Boolean {
@@ -277,12 +266,10 @@ class YtDlpDownloadService : Service() {
         const val ACTION_START = "com.drsumon.fastidm.action.START_YTDLP"
         const val ACTION_STOP = "com.drsumon.fastidm.action.STOP_YTDLP"
         const val ACTION_UPDATE = "com.drsumon.fastidm.action.UPDATE_YTDLP"
-        const val ACTION_AUTO_UPDATE = "com.drsumon.fastidm.action.AUTO_UPDATE_YTDLP"
         const val EXTRA_URL = "extra_url"
         const val EXTRA_QUALITY = "extra_quality"
         const val PREFS = "fastidm_ytdlp_state"
-        private const val KEY_LAST_UPDATE = "yt_dlp_last_successful_update"
-        const val AUTO_UPDATE_INTERVAL_MS = 3L * 24L * 60L * 60L * 1000L
+        const val KEY_LAST_UPDATE = "yt_dlp_last_successful_update"
         private const val TAG = "FastIDM-yt-dlp"
         private const val CHANNEL_ID = "fastidm_video_downloads"
         private const val NOTIFICATION_ID = 4201
