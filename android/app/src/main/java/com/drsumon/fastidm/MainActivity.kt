@@ -20,6 +20,7 @@ import android.webkit.WebSettings
 import android.webkit.JavascriptInterface
 import android.os.Handler
 import android.os.Looper
+import android.widget.Toast
 import androidx.compose.ui.viewinterop.AndroidView
 import java.net.URLConnection
 import androidx.activity.ComponentActivity
@@ -37,7 +38,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class DownloadItem(val id: Long, val title: String, val status: Int, val downloaded: Long, val total: Long, val reason: Int)
 data class HistoryItem(val id: Long, val title: String, val mime: String, val size: Long, val date: Long, val uri: Uri)
@@ -100,22 +105,63 @@ class MainActivity : ComponentActivity() {
     }
     private fun enqueueDownload(rawUrl: String): String {
         val entered = rawUrl.trim()
-        if (isYoutubeUrl(entered)) return "YouTube link detected. Choose audio or video quality in the YouTube Downloader section."
-        val clean = normalizeGoogleDriveUrl(entered)
-        val uri = try { Uri.parse(clean) } catch (_: Exception) { null }
-        if (uri == null || (uri.scheme != "https" && uri.scheme != "http") || uri.host.isNullOrBlank()) return "Enter a valid HTTP or HTTPS URL."
+        if (isYoutubeUrl(entered)) {
+            return "YouTube link detected. Choose audio or video quality in the YouTube Downloader section."
+        }
+        if (isGoogleDriveUrl(entered)) {
+            lifecycleScope.launch {
+                try {
+                    val resolved = withContext(Dispatchers.IO) {
+                        GoogleDriveResolver.resolve(entered)
+                    }
+                    val message = enqueueResolvedDownload(
+                        resolved.url,
+                        resolved.cookieHeader,
+                        resolved.contentDisposition,
+                        resolved.contentType
+                    )
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    val message = e.message ?: "Google Drive link could not be prepared."
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                }
+            }
+            return "Google Drive link যাচাই করে ডাউনলোড প্রস্তুত করা হচ্ছে…"
+        }
+        return enqueueResolvedDownload(entered, null, null, null)
+    }
+
+    private fun enqueueResolvedDownload(
+        downloadUrl: String,
+        cookieHeader: String?,
+        contentDisposition: String?,
+        contentType: String?
+    ): String {
+        val uri = try { Uri.parse(downloadUrl) } catch (_: Exception) { null }
+        if (uri == null || (uri.scheme != "https" && uri.scheme != "http") || uri.host.isNullOrBlank()) {
+            return "Enter a valid HTTP or HTTPS URL."
+        }
         return try {
             val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-            val filename = URLUtil.guessFileName(clean, null, null).replace(Regex("""[\\/:*?"<>|]"""), "_").take(150).ifBlank { "download.bin" }
-            val request = DownloadManager.Request(uri).setTitle(filename).setDescription("Fast IDM · File download")
+            val filename = URLUtil.guessFileName(downloadUrl, contentDisposition, contentType)
+                .replace(Regex("""[\\/:*?"<>|]"""), "_").take(150).ifBlank { "download.bin" }
+            val request = DownloadManager.Request(uri)
+                .setTitle(filename)
+                .setDescription("Fast IDM · File download")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setAllowedOverMetered(true).setAllowedOverRoaming(false)
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(false)
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "FastIDM/$filename")
+                .addRequestHeader("User-Agent", GoogleDriveResolver.USER_AGENT)
+            if (!cookieHeader.isNullOrBlank()) request.addRequestHeader("Cookie", cookieHeader)
             manager.enqueue(request)
-            val source = if (clean != entered) "Google Drive file" else "File"
+            val source = if (isGoogleDriveUrl(downloadUrl)) "Google Drive file" else "File"
             "$source added to downloads: $filename"
-        } catch (e: Exception) { "Could not start download: ${e.localizedMessage ?: "unknown error"}" }
+        } catch (e: Exception) {
+            "Could not start download: ${e.localizedMessage ?: "unknown error"}"
+        }
     }
+
     private fun queryHistory(): List<HistoryItem> {
         val result = mutableListOf<HistoryItem>()
         if (Build.VERSION.SDK_INT < 29) {
@@ -197,18 +243,10 @@ private fun isVideoPlatformUrl(raw: String): Boolean {
     return supportedHosts.any { host == it || host.endsWith(".$it") }
 }
 
-private fun normalizeGoogleDriveUrl(raw: String): String {
-    val uri = try { Uri.parse(raw.trim()) } catch (_: Exception) { return raw.trim() }
+private fun isGoogleDriveUrl(raw: String): Boolean {
+    val uri = try { Uri.parse(raw.trim()) } catch (_: Exception) { return false }
     val host = uri.host?.lowercase().orEmpty()
-    if (host != "drive.google.com" && host != "docs.google.com") return raw.trim()
-    val pathId = Regex("/file/d/([^/]+)").find(uri.path.orEmpty())?.groupValues?.getOrNull(1)
-    val id = pathId ?: uri.getQueryParameter("id")
-    return if (!id.isNullOrBlank()) {
-        Uri.parse("https://drive.google.com/uc").buildUpon()
-            .appendQueryParameter("export", "download")
-            .appendQueryParameter("id", id)
-            .build().toString()
-    } else raw.trim()
+    return host == "drive.google.com" || host == "docs.google.com"
 }
 
 
