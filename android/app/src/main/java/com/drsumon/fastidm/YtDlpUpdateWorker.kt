@@ -29,7 +29,7 @@ class YtDlpUpdateWorker(
                         YtDlpDownloadService.PREFS,
                         Context.MODE_PRIVATE
                     ).edit()
-                        .putLong("yt_dlp_last_successful_update", System.currentTimeMillis())
+                        .putLong(YtDlpDownloadService.KEY_LAST_UPDATE, System.currentTimeMillis())
                         .putString("status", "yt-dlp NIGHTLY checked · $version")
                         .putFloat("progress", 100f)
                         .apply()
