@@ -8,6 +8,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.MediaStore
+import android.content.ContentUris
 import android.webkit.URLUtil
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,6 +28,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
 data class DownloadItem(val id: Long, val title: String, val status: Int, val downloaded: Long, val total: Long, val reason: Int)
+data class HistoryItem(val id: Long, val title: String, val mime: String, val size: Long, val date: Long, val uri: Uri)
 
 class MainActivity : ComponentActivity() {
     private var sharedUrl by mutableStateOf("")
@@ -43,6 +46,7 @@ class MainActivity : ComponentActivity() {
                         sharedUrl,
                         ::enqueueDownload,
                         ::queryDownloads,
+                        ::queryHistory,
                         onStartVideo = { url, quality ->
                             val service = Intent(this, YtDlpDownloadService::class.java)
                                 .setAction(YtDlpDownloadService.ACTION_START)
@@ -90,6 +94,27 @@ class MainActivity : ComponentActivity() {
             "$source added to downloads: $filename"
         } catch (e: Exception) { "Could not start download: ${e.localizedMessage ?: "unknown error"}" }
     }
+    private fun queryHistory(): List<HistoryItem> {
+        if (Build.VERSION.SDK_INT < 29) return emptyList()
+        val result = mutableListOf<HistoryItem>()
+        val projection = arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME, MediaStore.Downloads.MIME_TYPE, MediaStore.Downloads.SIZE, MediaStore.Downloads.DATE_ADDED, MediaStore.Downloads.RELATIVE_PATH)
+        val selection = "${MediaStore.Downloads.RELATIVE_PATH} = ?"
+        val args = arrayOf(Environment.DIRECTORY_DOWNLOADS + "/FastIDM/")
+        contentResolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection, selection, args, MediaStore.Downloads.DATE_ADDED + " DESC")?.use { cur ->
+            val idCol = cur.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+            val nameCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.DISPLAY_NAME)
+            val mimeCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.MIME_TYPE)
+            val sizeCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.SIZE)
+            val dateCol = cur.getColumnIndexOrThrow(MediaStore.Downloads.DATE_ADDED)
+            while (cur.moveToNext()) {
+                val id = cur.getLong(idCol)
+                val uri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+                result += HistoryItem(id, cur.getString(nameCol) ?: "Downloaded file", cur.getString(mimeCol) ?: "application/octet-stream", cur.getLong(sizeCol), cur.getLong(dateCol) * 1000L, uri)
+            }
+        }
+        return result
+    }
+
     private fun queryDownloads(): List<DownloadItem> {
         val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
         val cursor = manager.query(DownloadManager.Query()) ?: return emptyList()
@@ -132,6 +157,7 @@ private fun FastIdmHome(
     initialUrl: String,
     onEnqueue: (String) -> String,
     onRefresh: () -> List<DownloadItem>,
+    onHistory: () -> List<HistoryItem>,
     onStartVideo: (String, String) -> Unit,
     onStopVideo: () -> Unit,
     onCancel: (Long) -> Unit
@@ -140,6 +166,8 @@ private fun FastIdmHome(
     var url by rememberSaveable { mutableStateOf(initialUrl) }
     var message by rememberSaveable { mutableStateOf("Paste a direct file URL or share a video link from your browser.") }
     var downloads by remember { mutableStateOf(emptyList<DownloadItem>()) }
+    var history by remember { mutableStateOf(emptyList<HistoryItem>()) }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
     var quality by rememberSaveable { mutableStateOf("720p") }
     var showYoutubeChooser by rememberSaveable { mutableStateOf(false) }
     var lastPromptedYoutubeUrl by rememberSaveable { mutableStateOf("") }
@@ -173,6 +201,33 @@ private fun FastIdmHome(
     val muted = androidx.compose.ui.graphics.Color(0xFF716B7D)
     val pale = androidx.compose.ui.graphics.Color(0xFFF5F2FA)
     val teal = androidx.compose.ui.graphics.Color(0xFF16A995)
+
+    if (showHistory) {
+        history = onHistory()
+        AlertDialog(
+            onDismissRequest = { showHistory = false },
+            title = { Text("Download history") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.heightIn(max = 460.dp)) {
+                    Button(onClick = { context.startActivity(Intent(context, SoulPlayerActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text("♫  Open Soul Player") }
+                    if (history.isEmpty()) Text("No completed files found in Downloads/FastIDM yet.", color = muted)
+                    else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(history, key = { it.id }) { file ->
+                            Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFFF5F2FA))) {
+                                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Text(file.title, color = ink, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                                    Text("${file.mime}  ·  ${formatBytes(file.size)}", color = muted, style = MaterialTheme.typography.bodySmall)
+                                    if (file.mime.startsWith("audio/")) TextButton(onClick = { context.startActivity(Intent(context, SoulPlayerActivity::class.java)) }) { Text("Play in Soul Player") }
+                                    else TextButton(onClick = { try { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(file.uri, file.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) } catch (_: Exception) {} }) { Text("Open file") }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showHistory = false }) { Text("Close") } }
+        )
+    }
 
     if (showYoutubeChooser) {
         AlertDialog(
@@ -222,8 +277,11 @@ private fun FastIdmHome(
                     Text("FAST IDM", style = MaterialTheme.typography.headlineMedium, color = ink)
                     Text("Your downloads, one place.", style = MaterialTheme.typography.bodyMedium, color = muted)
                 }
-                Surface(color = androidx.compose.ui.graphics.Color(0xFFE9E2F7), shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)) {
-                    Text("ANDROID  •  0.4.0", modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp), color = purple, style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    TextButton(onClick = { history = onHistory(); showHistory = true }) { Text("History", color = purple) }
+                    Surface(color = androidx.compose.ui.graphics.Color(0xFFE9E2F7), shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)) {
+                        Text("0.4.0", modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp), color = purple, style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
         }
