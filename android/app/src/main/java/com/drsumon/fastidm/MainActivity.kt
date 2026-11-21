@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
                             getSharedPreferences("fastidm_settings", MODE_PRIVATE).edit().putBoolean("dark_mode", enabled).apply()
                         },
                         onEnqueue = ::enqueueDownload,
+                        onUpdateYtDlp = ::requestYtDlpUpdate,
                         onRefresh = ::queryDownloads,
                         onHistory = ::queryHistory,
                         onStartVideo = { url, quality ->
@@ -85,6 +86,20 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+        maybeStartYtDlpAutoUpdate()
+    }
+    private fun requestYtDlpUpdate() {
+        val service = Intent(this, YtDlpDownloadService::class.java).setAction(YtDlpDownloadService.ACTION_UPDATE)
+        ContextCompat.startForegroundService(this, service)
+        Toast.makeText(this, "yt-dlp NIGHTLY update queued", Toast.LENGTH_SHORT).show()
+    }
+    private fun maybeStartYtDlpAutoUpdate() {
+        val last = getSharedPreferences(YtDlpDownloadService.PREFS, MODE_PRIVATE)
+            .getLong("yt_dlp_last_successful_update", 0L)
+        if (System.currentTimeMillis() - last >= YtDlpDownloadService.AUTO_UPDATE_INTERVAL_MS) {
+            val service = Intent(this, YtDlpDownloadService::class.java).setAction(YtDlpDownloadService.ACTION_AUTO_UPDATE)
+            ContextCompat.startForegroundService(this, service)
         }
     }
     override fun onNewIntent(intent: Intent) {
@@ -368,6 +383,7 @@ private fun FastIdmHome(
     darkMode: Boolean,
     onNightModeChanged: (Boolean) -> Unit,
     onEnqueue: (String) -> String,
+    onUpdateYtDlp: () -> Unit,
     onRefresh: () -> List<DownloadItem>,
     onHistory: () -> List<HistoryItem>,
     onStartVideo: (String, String) -> Unit,
@@ -437,6 +453,7 @@ private fun FastIdmHome(
         BasicSettingsScreen(
             darkMode = darkMode,
             onNightModeChanged = onNightModeChanged,
+            onUpdateYtDlp = onUpdateYtDlp,
             onBack = { showSettings = false }
         )
         return
@@ -906,6 +923,7 @@ private fun InAppBrowserScreen(
 private fun BasicSettingsScreen(
     darkMode: Boolean,
     onNightModeChanged: (Boolean) -> Unit,
+    onUpdateYtDlp: () -> Unit,
     onBack: () -> Unit
 ) {
     val bg = if (darkMode) androidx.compose.ui.graphics.Color(0xFF121018) else androidx.compose.ui.graphics.Color(0xFFF5F2FA)
@@ -938,6 +956,13 @@ private fun BasicSettingsScreen(
             }
         }
         Text("Appearance changes are saved automatically.", color = muted, style = MaterialTheme.typography.bodySmall)
+        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = panel)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("YouTube engine", color = ink, style = MaterialTheme.typography.titleMedium)
+                Text("Update yt-dlp NIGHTLY and enable the latest YouTube extractor fixes.", color = muted, style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = onUpdateYtDlp) { Text("Check for yt-dlp updates", color = accent) }
+            }
+        }
         Spacer(Modifier.weight(1f))
         Text("Fast-IDM · Android", color = muted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally))
     }
