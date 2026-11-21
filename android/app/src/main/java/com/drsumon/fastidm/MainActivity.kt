@@ -132,7 +132,7 @@ private fun FastIdmHome(
     }
     Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Fast IDM", style = MaterialTheme.typography.headlineLarge)
-        Text("Android Edition · 0.3.0", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Android Edition · 0.3.1", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("New download", style = MaterialTheme.typography.titleLarge)
