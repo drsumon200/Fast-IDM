@@ -191,7 +191,7 @@ class YtDlpDownloadService : Service() {
     }
 
     private fun publishToDownloads(source: File): Boolean {
-        return try {
+        try {
             if (Build.VERSION.SDK_INT >= 29) {
                 val values = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, source.name)
@@ -199,25 +199,54 @@ class YtDlpDownloadService : Service() {
                     put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/FastIDM")
                     put(MediaStore.Downloads.IS_PENDING, 1)
                 }
-                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
-                try {
-                    contentResolver.openOutputStream(uri)?.use { output -> source.inputStream().use { it.copyTo(output) } }
-                        ?: throw IllegalStateException("Could not open output file")
-                    values.clear()
-                    values.put(MediaStore.Downloads.IS_PENDING, 0)
-                    contentResolver.update(uri, values, null, null)
-                    true
-                } catch (e: Exception) {
-                    contentResolver.delete(uri, null, null)
-                    false
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    try {
+                        contentResolver.openOutputStream(uri)?.use { output -> source.inputStream().use { it.copyTo(output) } }
+                            ?: throw IllegalStateException("Could not open output file")
+                        values.clear()
+                        values.put(MediaStore.Downloads.IS_PENDING, 0)
+                        contentResolver.update(uri, values, null, null)
+                        recordDownloadHistory(source.name, mimeType(source.extension), source.length(), uri.toString())
+                        return true
+                    } catch (e: Exception) {
+                        try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+                    }
                 }
-            } else {
-                val targetDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FastIDM")
-                if (!targetDir.exists()) targetDir.mkdirs()
-                source.copyTo(File(targetDir, source.name), overwrite = true)
-                true
             }
-        } catch (_: Exception) { false }
+            val targetDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FastIDM")
+            if (!targetDir.exists()) targetDir.mkdirs()
+            val targetFile = File(targetDir, source.name)
+            val finalFile = try {
+                source.copyTo(targetFile, overwrite = true)
+                targetFile
+            } catch (_: Exception) {
+                source
+            }
+            recordDownloadHistory(finalFile.name, mimeType(finalFile.extension), finalFile.length(), Uri.fromFile(finalFile).toString())
+            return true
+        } catch (_: Exception) {
+            recordDownloadHistory(source.name, mimeType(source.extension), source.length(), Uri.fromFile(source).toString())
+            return false
+        }
+    }
+
+    private fun recordDownloadHistory(title: String, mime: String, size: Long, uriString: String) {
+        try {
+            val prefs = getSharedPreferences(PREFS_HISTORY, MODE_PRIVATE)
+            val existing = prefs.getString("items", "[]") ?: "[]"
+            val array = org.json.JSONArray(existing)
+            val item = org.json.JSONObject().apply {
+                put("id", System.currentTimeMillis())
+                put("title", title)
+                put("mime", mime)
+                put("size", size)
+                put("date", System.currentTimeMillis())
+                put("uri", uriString)
+            }
+            array.put(item)
+            prefs.edit().putString("items", array.toString()).apply()
+        } catch (_: Exception) {}
     }
 
     private fun mimeType(ext: String): String = when (ext.lowercase()) {
@@ -285,6 +314,7 @@ class YtDlpDownloadService : Service() {
         const val EXTRA_QUALITY = "extra_quality"
         const val EXTRA_SPEED_LIMIT = "extra_speed_limit"
         const val PREFS = "fastidm_ytdlp_state"
+        const val PREFS_HISTORY = "fastidm_ytdlp_history"
         const val KEY_LAST_UPDATE = "yt_dlp_last_successful_update"
         private const val TAG = "FastIDM-yt-dlp"
         private const val CHANNEL_ID = "fastidm_video_downloads"

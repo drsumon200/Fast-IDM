@@ -241,6 +241,9 @@ class MainActivity : ComponentActivity() {
             val filename = (parsedName ?: URLUtil.guessFileName(downloadUrl, contentDisposition, contentType))
                 .replace(Regex("""[\\/:*?"<>|]"""), "_").take(150).ifBlank { "download.bin" }
 
+            val targetFolder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FastIDM")
+            if (!targetFolder.exists()) targetFolder.mkdirs()
+
             val request = DownloadManager.Request(uri)
                 .setTitle(filename)
                 .setDescription("Fast IDM · File download")
@@ -255,6 +258,18 @@ class MainActivity : ComponentActivity() {
             "$source added to downloads: $filename"
         } catch (e: Exception) {
             "Could not start download: ${e.localizedMessage ?: "unknown error"}"
+        }
+    }
+
+    private fun getFileUri(file: File): Uri {
+        return try {
+            androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "${applicationContext.packageName}.provider",
+                file
+            )
+        } catch (_: Exception) {
+            Uri.fromFile(file)
         }
     }
 
@@ -275,28 +290,89 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun queryHistory(): List<HistoryItem> {
-        val manager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-        val cursor = manager.query(DownloadManager.Query().setFilterByStatus(DownloadManager.STATUS_SUCCESSFUL))
-            ?: return emptyList()
-        val result = mutableListOf<HistoryItem>()
-        cursor.use { cur ->
-            val idCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_ID)
-            val titleCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE)
-            val mimeCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_MEDIA_TYPE)
-            val sizeCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-            val dateCol = cur.getColumnIndexOrThrow(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP)
-            while (cur.moveToNext()) {
-                val id = cur.getLong(idCol)
-                val uri = manager.getUriForDownloadedFile(id) ?: continue
-                val title = cur.getString(titleCol) ?: "Downloaded file"
-                val mime = cur.getString(mimeCol)
-                    ?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
-                    ?: URLConnection.guessContentTypeFromName(title)
-                    ?: "application/octet-stream"
-                result += HistoryItem(id, title, mime, cur.getLong(sizeCol), cur.getLong(dateCol), uri)
+        val itemsMap = LinkedHashMap<String, HistoryItem>()
+
+        // 1. Android DownloadManager completed downloads
+        try {
+            val manager = getSystemService(DOWNLOAD_SERVICE) as? DownloadManager
+            if (manager != null) {
+                val cursor = manager.query(DownloadManager.Query().setFilterByStatus(DownloadManager.STATUS_SUCCESSFUL))
+                cursor?.use { cur ->
+                    val idCol = cur.getColumnIndex(DownloadManager.COLUMN_ID)
+                    val titleCol = cur.getColumnIndex(DownloadManager.COLUMN_TITLE)
+                    val mimeCol = cur.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE)
+                    val sizeCol = cur.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                    val dateCol = cur.getColumnIndex(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP)
+                    val localUriCol = cur.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                    while (cur.moveToNext()) {
+                        val id = if (idCol >= 0) cur.getLong(idCol) else System.currentTimeMillis()
+                        val title = (if (titleCol >= 0) cur.getString(titleCol) else null)?.ifBlank { "Download" } ?: "Download"
+                        val uri = manager.getUriForDownloadedFile(id)
+                            ?: (if (localUriCol >= 0) cur.getString(localUriCol)?.let { Uri.parse(it) } else null)
+                            ?: getFileUri(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FastIDM/$title"))
+
+                        val rawMime = if (mimeCol >= 0) cur.getString(mimeCol) else null
+                        val mime = if (!rawMime.isNullOrBlank() && rawMime != "application/octet-stream") rawMime else resolveMimeType(title)
+                        val size = if (sizeCol >= 0) cur.getLong(sizeCol) else 0L
+                        val date = if (dateCol >= 0) cur.getLong(dateCol) else System.currentTimeMillis()
+
+                        itemsMap[title.lowercase()] = HistoryItem(id, title, mime, size, date, uri)
+                    }
+                }
             }
-        }
-        return result.sortedByDescending { it.date }
+        } catch (_: Exception) {}
+
+        // 2. yt-dlp Video / Audio download history from SharedPreferences
+        try {
+            val prefs = getSharedPreferences(YtDlpDownloadService.PREFS_HISTORY, MODE_PRIVATE)
+            val raw = prefs.getString("items", "[]") ?: "[]"
+            val array = org.json.JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val title = obj.optString("title", "Video download")
+                val uriStr = obj.optString("uri", "")
+                val uri = if (uriStr.isNotBlank()) Uri.parse(uriStr) else null
+                if (uri != null) {
+                    val rawMime = obj.optString("mime", "")
+                    val mime = if (rawMime.isNotBlank() && rawMime != "application/octet-stream") rawMime else resolveMimeType(title)
+                    val size = obj.optLong("size", 0L)
+                    val date = obj.optLong("date", System.currentTimeMillis())
+                    val id = obj.optLong("id", System.currentTimeMillis())
+                    itemsMap[title.lowercase()] = HistoryItem(id, title, mime, size, date, uri)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Scan physical FastIDM storage directories for any downloaded files
+        try {
+            val scanDirs = listOf(
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "FastIDM"),
+                File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "FastIDM")
+            )
+            for (dir in scanDirs) {
+                if (dir.exists() && dir.isDirectory) {
+                    dir.listFiles()?.forEach { file ->
+                        if (file.isFile && !file.name.endsWith(".part") && !file.name.endsWith(".tmp") && !file.name.startsWith(".")) {
+                            val key = file.name.lowercase()
+                            if (!itemsMap.containsKey(key)) {
+                                val mime = resolveMimeType(file.name)
+                                val safeUri = getFileUri(file)
+                                itemsMap[key] = HistoryItem(
+                                    id = file.lastModified() + file.length(),
+                                    title = file.name,
+                                    mime = mime,
+                                    size = file.length(),
+                                    date = file.lastModified(),
+                                    uri = safeUri
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        return itemsMap.values.sortedByDescending { it.date }
     }
 
     private fun queryDownloads(): List<DownloadItem> {
@@ -326,8 +402,16 @@ class MainActivity : ComponentActivity() {
 
     private fun openHistoryItem(item: HistoryItem) {
         try {
+            val uri = if (item.uri.scheme == "file") {
+                val path = item.uri.path
+                if (path != null) {
+                    val file = File(path)
+                    if (file.exists()) getFileUri(file) else item.uri
+                } else item.uri
+            } else item.uri
+
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(item.uri, item.mime)
+                setDataAndType(uri, item.mime)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)
@@ -348,7 +432,11 @@ private fun isYoutubeUrl(raw: String): Boolean {
 }
 
 private val supportedVideoExtensions = setOf(
-    "mp4", "mkv", "avi", "mov", "wmv", "webm", "flv", "f4v", "3gp", "avchd"
+    "mp4", "mkv", "avi", "mov", "wmv", "webm", "flv", "f4v", "3gp", "avchd", "ts", "m4v"
+)
+
+private val supportedAudioExtensions = setOf(
+    "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma", "amr", "mid", "midi"
 )
 
 private fun isSupportedVideoFile(rawUrl: String, contentDisposition: String? = null): Boolean {
@@ -360,6 +448,47 @@ private fun isSupportedVideoFile(rawUrl: String, contentDisposition: String? = n
         val extension = candidate.substringAfterLast('/', candidate).substringAfterLast('.', "")
             .substringBefore('?').substringBefore('#').lowercase()
         extension in supportedVideoExtensions
+    }
+}
+
+private fun isSupportedAudioFile(rawUrl: String, contentDisposition: String? = null): Boolean {
+    val path = try { Uri.parse(rawUrl.trim()).path.orEmpty() } catch (_: Exception) { rawUrl }
+    val dispositionName = contentDisposition
+        ?.let { Regex("""(?i)filename\*?=(?:UTF-8''|["']?)([^"';]+)["']?""").find(it)?.groupValues?.getOrNull(1) }
+        .orEmpty()
+    return listOf(path, dispositionName).any { candidate ->
+        val extension = candidate.substringAfterLast('/', candidate).substringAfterLast('.', "")
+            .substringBefore('?').substringBefore('#').lowercase()
+        extension in supportedAudioExtensions
+    }
+}
+
+private fun resolveMimeType(filename: String): String {
+    val ext = filename.substringAfterLast('.', "").substringBefore('?').lowercase()
+    return when (ext) {
+        "mp4" -> "video/mp4"
+        "mkv" -> "video/x-matroska"
+        "webm" -> "video/webm"
+        "avi" -> "video/x-msvideo"
+        "mov" -> "video/quicktime"
+        "3gp" -> "video/3gpp"
+        "mp3" -> "audio/mpeg"
+        "m4a" -> "audio/mp4"
+        "wav" -> "audio/wav"
+        "flac" -> "audio/flac"
+        "ogg", "opus" -> "audio/ogg"
+        "aac" -> "audio/aac"
+        "apk" -> "application/vnd.android.package-archive"
+        "pdf" -> "application/pdf"
+        "zip" -> "application/zip"
+        "rar" -> "application/x-rar-compressed"
+        "7z" -> "application/x-7z-compressed"
+        "doc" -> "application/msword"
+        "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "xls" -> "application/vnd.ms-excel"
+        "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "txt" -> "text/plain"
+        else -> URLConnection.guessContentTypeFromName(filename) ?: "application/octet-stream"
     }
 }
 
@@ -449,18 +578,48 @@ private fun FastIdmHome(
             videoProgress = ytProgress,
             darkMode = darkMode,
             onBack = { showHistory = false },
+            onRefresh = {
+                history = onHistory()
+                downloads = onRefresh()
+            },
             onPlayAudio = { file ->
+                val safeUri = if (file.uri.scheme == "file") {
+                    val path = file.uri.path
+                    if (path != null && File(path).exists()) {
+                        try {
+                            androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.provider",
+                                File(path)
+                            )
+                        } catch (_: Exception) { file.uri }
+                    } else file.uri
+                } else file.uri
+
                 context.startActivity(
                     Intent(context, SoulPlayerActivity::class.java)
-                        .setData(file.uri)
+                        .setData(safeUri)
                         .putExtra("fastidm_audio_title", file.title)
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 )
             },
             onPlayVideo = { file ->
+                val safeUri = if (file.uri.scheme == "file") {
+                    val path = file.uri.path
+                    if (path != null && File(path).exists()) {
+                        try {
+                            androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.provider",
+                                File(path)
+                            )
+                        } catch (_: Exception) { file.uri }
+                    } else file.uri
+                } else file.uri
+
                 context.startActivity(
                     Intent(context, VideoPlayerActivity::class.java)
-                        .setData(file.uri)
+                        .setData(safeUri)
                         .putExtra("title", file.title)
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 )
@@ -933,6 +1092,7 @@ private fun DownloadHistoryScreen(
     videoProgress: Float,
     darkMode: Boolean,
     onBack: () -> Unit,
+    onRefresh: () -> Unit = {},
     onPlayAudio: (HistoryItem) -> Unit,
     onPlayVideo: (HistoryItem) -> Unit,
     onOpenFile: (HistoryItem) -> Unit
@@ -952,7 +1112,7 @@ private fun DownloadHistoryScreen(
             "APK" -> history.filter { it.title.endsWith(".apk", true) || it.mime.contains("package-archive") }
             "PDF / Docs" -> history.filter { it.title.endsWith(".pdf", true) || it.mime.contains("pdf") || it.title.endsWith(".doc", true) || it.title.endsWith(".docx", true) }
             "Video" -> history.filter { it.mime.startsWith("video/") || isSupportedVideoFile(it.title) }
-            "Audio" -> history.filter { it.mime.startsWith("audio/") }
+            "Audio" -> history.filter { it.mime.startsWith("audio/") || isSupportedAudioFile(it.title) }
             "Archives" -> history.filter { it.title.endsWith(".zip", true) || it.title.endsWith(".rar", true) || it.title.endsWith(".7z", true) }
             else -> history
         }
@@ -970,6 +1130,10 @@ private fun DownloadHistoryScreen(
             TextButton(onClick = onBack) { Text("← Back", color = accentIndigo, fontSize = 14.sp) }
             Spacer(Modifier.width(8.dp))
             Text("Download History", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = textPrimary)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onRefresh) {
+                Text("🔄", fontSize = 16.sp)
+            }
         }
 
         // Category Filter Chips
@@ -1003,10 +1167,10 @@ private fun DownloadHistoryScreen(
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(filteredHistory, key = { it.id }) { file ->
+                items(filteredHistory, key = { "${it.id}_${it.title}" }) { file ->
                     val isApk = file.title.endsWith(".apk", true) || file.mime.contains("package-archive")
                     val isPdf = file.title.endsWith(".pdf", true) || file.mime.contains("pdf")
-                    val isAudio = file.mime.startsWith("audio/")
+                    val isAudio = file.mime.startsWith("audio/") || isSupportedAudioFile(file.title)
                     val isVideo = file.mime.startsWith("video/") || isSupportedVideoFile(file.title)
 
                     Card(
