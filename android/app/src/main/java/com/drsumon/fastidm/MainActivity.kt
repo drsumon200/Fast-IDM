@@ -11,6 +11,13 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.content.ContentUris
 import android.webkit.URLUtil
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.DownloadListener
+import android.webkit.WebSettings
+import androidx.compose.ui.viewinterop.AndroidView
 import java.net.URLConnection
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -268,6 +275,8 @@ private fun FastIdmHome(
     var message by rememberSaveable { mutableStateOf("") }
     var ytStatus by remember { mutableStateOf("Ready") }
     var ytProgress by remember { mutableFloatStateOf(0f) }
+    var showBrowser by rememberSaveable { mutableStateOf(false) }
+    var browserStart by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(initialUrl) { if (initialUrl.isNotBlank()) url = initialUrl }
     LaunchedEffect(historyRequestCount) { if (historyRequestCount > 0) { history = onHistory(); showHistory = true } }
@@ -306,6 +315,15 @@ private fun FastIdmHome(
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 )
             }
+        )
+        return
+    }
+
+    if (showBrowser) {
+        InAppBrowserScreen(
+            initialTarget = browserStart,
+            onBack = { showBrowser = false },
+            onDownload = { candidate -> message = onEnqueue(candidate) }
         )
         return
     }
@@ -413,14 +431,16 @@ private fun FastIdmHome(
                             onClick = {
                                 val candidate = url.trim()
                                 when {
-                                    candidate.isBlank() -> message = "Paste a link first."
-                                    !candidate.startsWith("https://", true) && !candidate.startsWith("http://", true) ->
-                                        message = "Enter a valid web link."
+                                    candidate.isBlank() -> message = "Enter a website, search term, or link."
                                     isVideoPlatformUrl(candidate) -> {
                                         quality = "Best"
                                         showVideoChooser = true
                                     }
-                                    else -> message = onEnqueue(candidate)
+                                    else -> {
+                                        browserStart = if (candidate.matches(Regex("(?i)^https?://.*"))) candidate
+                                            else "https://www.google.com/search?q=" + Uri.encode(candidate)
+                                        showBrowser = true
+                                    }
                                 }
                             },
                             modifier = Modifier.height(56.dp),
@@ -507,4 +527,148 @@ private fun formatBytes(bytes: Long): String {
     val mb = kb / 1024.0
     if (mb < 1024) return String.format("%.1f MB", mb)
     return String.format("%.2f GB", mb / 1024.0)
+}
+
+@Composable
+private fun InAppBrowserScreen(
+    initialTarget: String,
+    onBack: () -> Unit,
+    onDownload: (String) -> Unit
+) {
+    val purple = androidx.compose.ui.graphics.Color(0xFF6046A5)
+    val ink = androidx.compose.ui.graphics.Color(0xFF211936)
+    val context = LocalContext.current
+    var address by rememberSaveable { mutableStateOf(initialTarget) }
+    var detectedUrl by remember { mutableStateOf("") }
+    var showDownloadPrompt by remember { mutableStateOf(false) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var pageTitle by remember { mutableStateOf("Browser") }
+
+    fun openAddress(raw: String) {
+        val value = raw.trim()
+        if (value.isBlank()) return
+        val target = if (value.matches(Regex("(?i)^https?://.*"))) value
+            else if (value.contains(".") && !value.contains(" ")) "https://$value"
+            else "https://www.google.com/search?q=" + Uri.encode(value)
+        address = target
+        webView?.loadUrl(target)
+    }
+
+    BackHandler {
+        val current = webView
+        if (current?.canGoBack() == true) current.goBack() else onBack()
+    }
+
+    Column(
+        Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFFF5F2FA))
+            .statusBarsPadding().navigationBarsPadding()
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { if (webView?.canGoBack() == true) webView?.goBack() else onBack() }) {
+                Text("←", color = purple, style = MaterialTheme.typography.titleLarge)
+            }
+            OutlinedTextField(
+                value = address,
+                onValueChange = { address = it },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+                placeholder = { Text("Search or enter website") },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Go),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { openAddress(address) })
+            )
+            TextButton(onClick = { openAddress(address) }) { Text("Go", color = purple) }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { webView?.goBack() }, enabled = webView?.canGoBack() == true) { Text("Back") }
+            TextButton(onClick = { webView?.goForward() }, enabled = webView?.canGoForward() == true) { Text("Forward") }
+            TextButton(onClick = { webView?.reload() }) { Text("Reload") }
+            Spacer(Modifier.weight(1f))
+            Text(pageTitle, maxLines = 1, style = MaterialTheme.typography.labelSmall, color = ink)
+        }
+        Box(Modifier.fillMaxSize()) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        webView = this
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.loadsImagesAutomatically = true
+                        settings.javaScriptCanOpenWindowsAutomatically = false
+                        settings.setSupportMultipleWindows(false)
+                        settings.cacheMode = WebSettings.LOAD_DEFAULT
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = true
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                val target = request.url.toString()
+                                val path = request.url.path.orEmpty().lowercase()
+                                val likelyFile = Regex("""\.(pdf|zip|rar|7z|apk|exe|dmg|iso|mp3|m4a|wav|flac|mp4|mkv|webm|jpg|jpeg|png|gif|docx?|xlsx?|pptx?|txt|csv)(?:$|/)""")
+                                    .containsMatchIn(path)
+                                if (likelyFile && request.isForMainFrame) {
+                                    detectedUrl = target
+                                    showDownloadPrompt = true
+                                    return true
+                                }
+                                return false
+                            }
+
+                            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                                address = url
+                            }
+
+                            override fun onPageFinished(view: WebView, url: String) {
+                                address = url
+                                pageTitle = view.title?.take(45) ?: "Browser"
+                            }
+                        }
+                        setDownloadListener(DownloadListener { url, _, contentDisposition, mimeType, _ ->
+                            detectedUrl = url
+                            showDownloadPrompt = true
+                        })
+                        loadUrl(initialTarget)
+                    }
+                },
+                update = { view -> webView = view }
+            )
+            if (showDownloadPrompt) {
+                Surface(
+                    modifier = Modifier.align(androidx.compose.ui.Alignment.BottomEnd).padding(18.dp),
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                    color = purple,
+                    shadowElevation = 10.dp
+                ) {
+                    TextButton(onClick = { showDownloadPrompt = false; showDownloadPrompt = true }) {
+                        Text("⬇", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDownloadPrompt && detectedUrl.isNotBlank()) {
+        AlertDialog(
+            onDismissRequest = { showDownloadPrompt = false },
+            title = { Text("Download detected", color = ink) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(URLUtil.guessFileName(detectedUrl, null, null), color = ink)
+                    Text(detectedUrl, color = purple, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                    Text("Fast-IDM detected a downloadable file on this page.", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = detectedUrl
+                    showDownloadPrompt = false
+                    onDownload(target)
+                }) { Text("Download", color = purple) }
+            },
+            dismissButton = { TextButton(onClick = { showDownloadPrompt = false }) { Text("Not now") } }
+        )
+    }
 }
