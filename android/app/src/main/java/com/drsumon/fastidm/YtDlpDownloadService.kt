@@ -59,17 +59,24 @@ class YtDlpDownloadService : Service() {
             YoutubeDL.getInstance().init(applicationContext)
             FFmpeg.getInstance().init(applicationContext)
 
-            // Refresh the bundled yt-dlp binary from the stable channel before downloading.
-            // If the device is offline or the update host is unavailable, keep using the
-            // bundled version and let the actual download report its own error.
-            saveState("Checking yt-dlp updates…", 0f)
-            try {
-                YoutubeDL.getInstance().updateYoutubeDL(
-                    applicationContext,
-                    YoutubeDL.UpdateChannel._STABLE
-                )
-            } catch (updateError: Exception) {
-                saveState("Could not update yt-dlp; trying bundled version…", 0f)
+            // Updating yt-dlp can delay the start of every download if done each time.
+            // Check for a stable update at most once every 7 days instead.
+            val updatePrefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            val lastUpdateCheck = updatePrefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
+            if (now - lastUpdateCheck >= UPDATE_CHECK_INTERVAL_MS) {
+                saveState("Checking yt-dlp updates…", 0f)
+                try {
+                    YoutubeDL.getInstance().updateYoutubeDL(
+                        applicationContext,
+                        YoutubeDL.UpdateChannel._STABLE
+                    )
+                    updatePrefs.edit().putLong(KEY_LAST_UPDATE_CHECK, now).apply()
+                } catch (updateError: Exception) {
+                    // Retry tomorrow if the update server is temporarily unavailable.
+                    updatePrefs.edit().putLong(KEY_LAST_UPDATE_CHECK, now - UPDATE_CHECK_INTERVAL_MS + UPDATE_RETRY_INTERVAL_MS).apply()
+                    saveState("Using installed yt-dlp version…", 0f)
+                }
             }
 
             val cleanUrl = url.trim()
@@ -210,5 +217,8 @@ class YtDlpDownloadService : Service() {
         private const val CHANNEL_ID = "fastidm_video_downloads"
         private const val NOTIFICATION_ID = 4201
         private const val PROCESS_ID = "fastidm-video-process"
+        private const val KEY_LAST_UPDATE_CHECK = "yt_dlp_last_update_check"
+        private const val UPDATE_CHECK_INTERVAL_MS = 7L * 24 * 60 * 60 * 1000
+        private const val UPDATE_RETRY_INTERVAL_MS = 24L * 60 * 60 * 1000
     }
 }
