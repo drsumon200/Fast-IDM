@@ -670,7 +670,6 @@ private fun FastIdmHome(
                 color = gold,
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    letterSpacing = 1.5.sp
                 )
             )
             Text(
