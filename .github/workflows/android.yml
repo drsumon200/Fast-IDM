@@ -3,7 +3,7 @@ name: Build Fast IDM Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "android-starter" ]
+    branches: [ "android-starter", "android-polished-ui-youtube-fix" ]
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
