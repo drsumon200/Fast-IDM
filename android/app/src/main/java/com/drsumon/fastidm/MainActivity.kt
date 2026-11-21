@@ -87,20 +87,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        maybeStartYtDlpAutoUpdate()
     }
     private fun requestYtDlpUpdate() {
         val service = Intent(this, YtDlpDownloadService::class.java).setAction(YtDlpDownloadService.ACTION_UPDATE)
         ContextCompat.startForegroundService(this, service)
         Toast.makeText(this, "yt-dlp NIGHTLY update queued", Toast.LENGTH_SHORT).show()
-    }
-    private fun maybeStartYtDlpAutoUpdate() {
-        val last = getSharedPreferences(YtDlpDownloadService.PREFS, MODE_PRIVATE)
-            .getLong("yt_dlp_last_successful_update", 0L)
-        if (System.currentTimeMillis() - last >= YtDlpDownloadService.AUTO_UPDATE_INTERVAL_MS) {
-            val service = Intent(this, YtDlpDownloadService::class.java).setAction(YtDlpDownloadService.ACTION_AUTO_UPDATE)
-            ContextCompat.startForegroundService(this, service)
-        }
     }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent); sharedUrl = extractUrl(intent); if (intent.action == ACTION_OPEN_HISTORY) historyRequestCount++
