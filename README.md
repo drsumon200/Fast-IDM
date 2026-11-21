@@ -36,3 +36,10 @@ Copyright © 2026 **Mahmudul Hasan Sumon**. All rights reserved.
 - **License:** MIT License
 
 Copyright © 2026 **Mahmudul Hasan Sumon**. All rights reserved.
+
+
+## Android edition (starter)
+
+A native Kotlin + Jetpack Compose Android project is available in the `android/` directory on the `android-starter` branch. It currently provides the initial UI and Android Share-menu link receiving. The actual HTTP and yt-dlp download engines are not implemented yet.
+
+The **Build Fast IDM Android APK** GitHub Actions workflow builds a debug APK. Open the repository's Actions tab, select the workflow, and download the `Fast-IDM-debug` artifact after a successful run.
