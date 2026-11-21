@@ -494,19 +494,23 @@ private fun FastIdmHome(
         ) {
             Surface(
                 color = if (darkMode) androidx.compose.ui.graphics.Color(0xFF292536).copy(alpha = 0.94f) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.58f),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, if (darkMode) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.72f)),
-                shadowElevation = 12.dp,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(36.dp),
+                shadowElevation = 6.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 22.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Text(
                         "Download everything",
                         color = ink,
-                        style = MaterialTheme.typography.titleLarge
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                    Text(
+                        "One place for your links, files and videos",
+                        color = muted.copy(alpha = 0.9f),
+                        style = MaterialTheme.typography.bodySmall
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -519,10 +523,10 @@ private fun FastIdmHome(
                             modifier = Modifier.weight(1f),
                             placeholder = { Text("Paste a video or file link") },
                             singleLine = true,
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = purple,
-                                unfocusedBorderColor = muted.copy(alpha = 0.35f),
+                                focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                                unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
                                 focusedContainerColor = if (darkMode) androidx.compose.ui.graphics.Color(0xFF393447) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f),
                                 unfocusedContainerColor = if (darkMode) androidx.compose.ui.graphics.Color(0xFF332F40) else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.25f)
                             )
@@ -544,8 +548,8 @@ private fun FastIdmHome(
                                 }
                             },
                             modifier = Modifier.height(56.dp),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                            contentPadding = PaddingValues(horizontal = 18.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = purple)
                         ) {
                             Text("Search")
@@ -553,17 +557,74 @@ private fun FastIdmHome(
                     }
                     if (message.isNotBlank()) {
                         Text(message, color = muted, style = MaterialTheme.typography.bodySmall)
-                    } else if (ytProgress > 0f && ytProgress < 100f) {
-                        Text("Video download · ${ytProgress.toInt()}%", color = muted, style = MaterialTheme.typography.bodySmall)
                     }
-                    if (ytProgress > 0f && ytProgress < 100f) {
-                        LinearProgressIndicator(
-                            progress = { (ytProgress / 100f).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = purple,
-                            trackColor = purple.copy(alpha = 0.12f)
-                        )
-                        TextButton(onClick = onStopVideo) { Text("Stop download", color = muted) }
+
+                    val activeFiles = downloads
+                        .filter { it.status != DownloadManager.STATUS_SUCCESSFUL }
+                        .sortedByDescending { it.id }
+                        .take(3)
+                    val videoRunning = ytStatus != "Ready" &&
+                        !ytStatus.startsWith("Completed") &&
+                        !ytStatus.startsWith("Failed") &&
+                        ytStatus != "Canceled"
+                    if (activeFiles.isNotEmpty() || videoRunning) {
+                        Text("DOWNLOADS", color = muted, style = MaterialTheme.typography.labelSmall)
+                        if (videoRunning) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                    Text("YouTube video", color = ink, style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f), maxLines = 1)
+                                    Text(
+                                        if (ytProgress > 0f) "Downloading · ${ytProgress.toInt()}%"
+                                        else "Preparing…",
+                                        color = purple, style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                                LinearProgressIndicator(
+                                    progress = { (ytProgress / 100f).coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth().height(5.dp),
+                                    color = purple,
+                                    trackColor = purple.copy(alpha = 0.14f)
+                                )
+                                TextButton(onClick = onStopVideo, contentPadding = PaddingValues(0.dp)) {
+                                    Text("Stop download", color = muted)
+                                }
+                            }
+                        }
+                        activeFiles.forEach { item ->
+                            val pct = if (item.total > 0L)
+                                ((item.downloaded * 100L) / item.total).toInt().coerceIn(0, 100) else -1
+                            val label = when (item.status) {
+                                DownloadManager.STATUS_PENDING -> "Waiting"
+                                DownloadManager.STATUS_RUNNING -> if (pct >= 0) "Downloading · $pct%" else "Downloading…"
+                                DownloadManager.STATUS_PAUSED -> "Unfinished · Paused"
+                                DownloadManager.STATUS_FAILED -> "Unfinished · Failed"
+                                else -> "Unfinished"
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                    Text(item.title, color = ink, style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f), maxLines = 1)
+                                    Text(label, color = purple, style = MaterialTheme.typography.labelSmall)
+                                }
+                                if (item.status == DownloadManager.STATUS_RUNNING) {
+                                    LinearProgressIndicator(
+                                        progress = { if (pct >= 0) pct / 100f else 0f },
+                                        modifier = Modifier.fillMaxWidth().height(5.dp),
+                                        color = purple,
+                                        trackColor = purple.copy(alpha = 0.14f)
+                                    )
+                                    Text(
+                                        "${if (pct >= 0) "$pct% · " else ""}${formatBytes(item.downloaded)} / ${if (item.total > 0L) formatBytes(item.total) else "size unknown"}",
+                                        color = muted, style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (ytStatus.startsWith("Failed")) {
+                        Text(ytStatus, color = androidx.compose.ui.graphics.Color(0xFFB3261E),
+                            style = MaterialTheme.typography.bodySmall, maxLines = 3)
                     }
                 }
             }
