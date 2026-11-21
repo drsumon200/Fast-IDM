@@ -807,7 +807,7 @@ private fun InAppBrowserScreen(
                                     """
                                     (function() {
                                       function installFastIdmButton() {
-                                        var host = location.hostname.toLowerCase().replace(/^www\\./, '');
+                                        var host = location.hostname.toLowerCase().replace(/^www\./, '');
                                         var known = ['youtube.com','youtu.be','youtube-nocookie.com','vimeo.com','dailymotion.com','tiktok.com','instagram.com','facebook.com','fb.watch','twitch.tv','x.com','twitter.com'];
                                         var supported = known.some(function(d) { return host === d || host.endsWith('.' + d); });
                                         var video = document.querySelector('video');
