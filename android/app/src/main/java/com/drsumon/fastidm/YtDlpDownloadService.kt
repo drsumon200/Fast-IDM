@@ -98,10 +98,27 @@ class YtDlpDownloadService : Service() {
                     request.addOption("--merge-output-format", "mkv")
                 }
             }
-            val response = YoutubeDL.getInstance().execute(request, PROCESS_ID) { progress, eta, line ->
+            fun executeDownload() = YoutubeDL.getInstance().execute(request, PROCESS_ID) { progress, eta, line ->
                 val pct = progress.coerceIn(0f, 100f)
                 saveState(if (line.isBlank()) "Downloading · ETA ${eta}s" else line.take(180), pct)
                 notificationManager.notify(NOTIFICATION_ID, buildNotification("Downloading · ${pct.toInt()}%", pct.toInt(), true))
+            }
+            val response = try {
+                executeDownload()
+            } catch (firstError: Exception) {
+                val details = (firstError.message ?: firstError.toString()).lowercase()
+                if (!isOutdatedExtractorError(details)) throw firstError
+                saveState("Updating outdated YouTube support…", 0f)
+                try {
+                    YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._STABLE)
+                } catch (updateError: Exception) {
+                    throw IllegalStateException(
+                        "yt-dlp পুরোনো এবং update ব্যর্থ হয়েছে: ${updateError.message ?: "network/update error"}",
+                        firstError
+                    )
+                }
+                saveState("Update complete · retrying video download…", 0f)
+                executeDownload()
             }
             if (response.out.isNotBlank()) saveState("Finishing video file…", 99f)
             val files = outputDir.listFiles()?.filter { file ->
@@ -122,6 +139,13 @@ class YtDlpDownloadService : Service() {
             stopForeground(STOP_FOREGROUND_DETACH)
             stopSelf()
         }
+    }
+
+    private fun isOutdatedExtractorError(message: String): Boolean {
+        return message.contains("older than 90 days") ||
+            message.contains("yt-dlp is too old") ||
+            message.contains("please update yt-dlp") ||
+            message.contains("update yt-dlp")
     }
 
     private fun publishToDownloads(source: File): Boolean {
