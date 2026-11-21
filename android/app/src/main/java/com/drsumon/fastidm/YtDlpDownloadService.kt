@@ -9,6 +9,7 @@ import android.content.ContentValues
 import android.content.Intent
 import android.os.Build
 import android.os.Environment
+import android.util.Log
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import com.yausername.ffmpeg.FFmpeg
@@ -98,10 +99,12 @@ class YtDlpDownloadService : Service() {
                     request.addOption("--merge-output-format", "mkv")
                 }
             }
-            fun executeDownload() = YoutubeDL.getInstance().execute(request, PROCESS_ID) { progress, eta, line ->
-                val pct = progress.coerceIn(0f, 100f)
-                saveState(if (line.isBlank()) "Downloading · ETA ${eta}s" else line.take(180), pct)
-                notificationManager.notify(NOTIFICATION_ID, buildNotification("Downloading · ${pct.toInt()}%", pct.toInt(), true))
+            fun executeDownload() = YtDlpOperationLock.withLock {
+                YoutubeDL.getInstance().execute(request, PROCESS_ID) { progress, eta, line ->
+                    val pct = progress.coerceIn(0f, 100f)
+                    saveState(if (line.isBlank()) "Downloading · ETA ${eta}s" else line.take(180), pct)
+                    notificationManager.notify(NOTIFICATION_ID, buildNotification("Downloading · ${pct.toInt()}%", pct.toInt(), true))
+                }
             }
             val response = try {
                 executeDownload()
@@ -110,7 +113,16 @@ class YtDlpDownloadService : Service() {
                 if (!isOutdatedExtractorError(details)) throw firstError
                 saveState("Updating outdated YouTube support…", 0f)
                 try {
-                    YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._STABLE)
+                    val updateStatus = YtDlpOperationLock.withLock {
+                        YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._NIGHTLY)
+                    }
+                    if (updateStatus != YoutubeDL.UpdateStatus.DONE &&
+                        updateStatus != YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE
+                    ) {
+                        throw IllegalStateException("yt-dlp update returned $updateStatus")
+                    }
+                    getSharedPreferences(UPDATE_PREFS, MODE_PRIVATE).edit()
+                        .putLong(LAST_SUCCESSFUL_UPDATE, System.currentTimeMillis()).apply()
                 } catch (updateError: Exception) {
                     throw IllegalStateException(
                         "yt-dlp পুরোনো এবং update ব্যর্থ হয়েছে: ${updateError.message ?: "network/update error"}",
@@ -136,8 +148,35 @@ class YtDlpDownloadService : Service() {
             saveState("Failed: $message", 0f)
             notificationManager.notify(NOTIFICATION_ID, buildNotification("Video download failed", 0, false))
         } finally {
+            // Check after this download so the current download never waits for a network update.
+            maybeUpdateYtDlpIfDue()
             stopForeground(STOP_FOREGROUND_DETACH)
             stopSelf()
+        }
+    }
+
+    private fun maybeUpdateYtDlpIfDue(force: Boolean = false) {
+        val prefs = getSharedPreferences(UPDATE_PREFS, MODE_PRIVATE)
+        val lastSuccess = prefs.getLong(LAST_SUCCESSFUL_UPDATE, 0L)
+        val now = System.currentTimeMillis()
+        if (!force && now - lastSuccess < UPDATE_INTERVAL_MS) return
+        try {
+            YoutubeDL.getInstance().init(applicationContext)
+            saveState("Checking yt-dlp updates in background…", 0f)
+            val status = YtDlpOperationLock.withLock {
+                YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._NIGHTLY)
+            }
+            when (status) {
+                YoutubeDL.UpdateStatus.DONE,
+                YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE -> {
+                    prefs.edit().putLong(LAST_SUCCESSFUL_UPDATE, now).apply()
+                    saveState("yt-dlp is up to date", 0f)
+                }
+                else -> Log.w("FastIDM-YTDLP", "Update not successful: $status")
+            }
+        } catch (e: Exception) {
+            // A background update must never turn a completed download into a failure.
+            Log.w("FastIDM-YTDLP", "Background yt-dlp update failed; keep current version", e)
         }
     }
 
@@ -241,9 +280,11 @@ class YtDlpDownloadService : Service() {
         const val EXTRA_URL = "extra_url"
         const val EXTRA_QUALITY = "extra_quality"
         const val PREFS = "fastidm_ytdlp_state"
+        const val UPDATE_PREFS = "fastidm_ytdlp_updates"
+        const val LAST_SUCCESSFUL_UPDATE = "last_ytdlp_update"
         private const val CHANNEL_ID = "fastidm_video_downloads"
         private const val NOTIFICATION_ID = 4201
         private const val PROCESS_ID = "fastidm-video-process"
-        private const val UPDATE_INTERVAL_MS = 7L * 24L * 60L * 60L * 1000L
+        private const val UPDATE_INTERVAL_MS = 3L * 24L * 60L * 60L * 1000L
     }
 }
