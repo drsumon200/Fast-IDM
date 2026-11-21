@@ -164,6 +164,18 @@ private fun isYoutubeUrl(raw: String): Boolean {
         host == "youtube-nocookie.com" || host.endsWith(".youtube-nocookie.com")
 }
 
+private fun isVideoPlatformUrl(raw: String): Boolean {
+    val uri = try { Uri.parse(raw.trim()) } catch (_: Exception) { return false }
+    val host = uri.host?.lowercase().orEmpty().removePrefix("www.")
+    val supportedHosts = listOf(
+        "youtube.com", "youtu.be", "youtube-nocookie.com",
+        "vimeo.com", "dailymotion.com", "tiktok.com",
+        "instagram.com", "facebook.com", "fb.watch",
+        "twitch.tv", "x.com", "twitter.com"
+    )
+    return supportedHosts.any { host == it || host.endsWith(".$it") }
+}
+
 private fun normalizeGoogleDriveUrl(raw: String): String {
     val uri = try { Uri.parse(raw.trim()) } catch (_: Exception) { return raw.trim() }
     val host = uri.host?.lowercase().orEmpty()
@@ -244,43 +256,29 @@ private fun FastIdmHome(
 ) {
     val context = LocalContext.current
     var url by rememberSaveable { mutableStateOf(initialUrl) }
-    var message by rememberSaveable { mutableStateOf("Paste a direct file URL or share a video link from your browser.") }
-    var downloads by remember { mutableStateOf(emptyList<DownloadItem>()) }
     var history by remember { mutableStateOf(emptyList<HistoryItem>()) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
-    var quality by rememberSaveable { mutableStateOf("720p") }
-    var showYoutubeChooser by rememberSaveable { mutableStateOf(false) }
-    var lastPromptedYoutubeUrl by rememberSaveable { mutableStateOf("") }
-    var menuOpen by remember { mutableStateOf(false) }
-    var ytStatus by remember { mutableStateOf("Ready for video link") }
+    var quality by rememberSaveable { mutableStateOf("Best") }
+    var showVideoChooser by rememberSaveable { mutableStateOf(false) }
+    var message by rememberSaveable { mutableStateOf("") }
+    var ytStatus by remember { mutableStateOf("Ready") }
     var ytProgress by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(initialUrl) { if (initialUrl.isNotBlank()) url = initialUrl }
-    LaunchedEffect(url) {
-        val candidate = url.trim()
-        if (candidate.isNotBlank()) {
-            delay(450)
-            if (isYoutubeUrl(candidate) && candidate != lastPromptedYoutubeUrl) {
-                lastPromptedYoutubeUrl = candidate
-                showYoutubeChooser = true
-            }
-        }
-    }
     LaunchedEffect(Unit) {
         while (true) {
-            downloads = onRefresh()
+            onRefresh()
             val prefs = context.getSharedPreferences(YtDlpDownloadService.PREFS, android.content.Context.MODE_PRIVATE)
-            ytStatus = prefs.getString("status", "Ready for video link") ?: "Ready for video link"
+            ytStatus = prefs.getString("status", "Ready") ?: "Ready"
             ytProgress = prefs.getFloat("progress", 0f)
-            delay(900)
+            delay(1200)
         }
     }
 
     val purple = androidx.compose.ui.graphics.Color(0xFF6046A5)
     val ink = androidx.compose.ui.graphics.Color(0xFF211936)
     val muted = androidx.compose.ui.graphics.Color(0xFF716B7D)
-    val pale = androidx.compose.ui.graphics.Color(0xFFF5F2FA)
-    val teal = androidx.compose.ui.graphics.Color(0xFF16A995)
+    val bg = androidx.compose.ui.graphics.Color(0xFFF5F2FA)
 
     if (showHistory) {
         DownloadHistoryScreen(
@@ -306,15 +304,18 @@ private fun FastIdmHome(
         return
     }
 
-    if (showYoutubeChooser) {
+    if (showVideoChooser) {
         AlertDialog(
-            onDismissRequest = { showYoutubeChooser = false },
-            title = { Text("Download video as") },
+            onDismissRequest = { showVideoChooser = false },
+            title = { Text("Choose video quality", color = ink) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("YouTube link detected", color = muted, style = MaterialTheme.typography.bodySmall)
-                    listOf("Audio MP3", "360p", "720p", "1080p", "Best").forEach { option ->
-                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Select the available quality for this video.", color = muted, style = MaterialTheme.typography.bodySmall)
+                    listOf("Best", "1080p", "720p", "360p").forEach { option ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
                             RadioButton(selected = quality == option, onClick = { quality = option })
                             Text(option, modifier = Modifier.weight(1f), color = ink)
                         }
@@ -323,177 +324,131 @@ private fun FastIdmHome(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    showYoutubeChooser = false
+                    showVideoChooser = false
                     onStartVideo(url.trim(), quality)
-                    ytStatus = "Starting $quality download…"
-                    ytProgress = 0f
-                }) { Text("Download") }
+                    message = "Starting $quality download…"
+                }) { Text("Download this video") }
             },
-            dismissButton = { TextButton(onClick = { showYoutubeChooser = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showVideoChooser = false }) { Text("Cancel") } }
         )
     }
 
-    LazyColumn(
+    BackHandler(enabled = false) { }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                androidx.compose.ui.graphics.Brush.verticalGradient(
-                    listOf(androidx.compose.ui.graphics.Color(0xFFFBFAFE), pale)
+                androidx.compose.ui.graphics.Brush.linearGradient(
+                    listOf(
+                        androidx.compose.ui.graphics.Color(0xFFDBD6EA),
+                        androidx.compose.ui.graphics.Color(0xFFE9EAF4),
+                        androidx.compose.ui.graphics.Color(0xFFD8E4EE)
+                    )
                 )
-            ),
-        contentPadding = PaddingValues(start = 18.dp, top = 20.dp, end = 18.dp, bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("FAST IDM", style = MaterialTheme.typography.headlineMedium, color = ink)
-                    Text("Your downloads, one place.", style = MaterialTheme.typography.bodyMedium, color = muted)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    TextButton(onClick = { history = onHistory(); showHistory = true }) { Text("History", color = purple) }
-                    Surface(color = androidx.compose.ui.graphics.Color(0xFFE9E2F7), shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)) {
-                        Text("0.4.0", modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp), color = purple, style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-        }
-
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Surface(color = androidx.compose.ui.graphics.Color(0xFFECE6F8), shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
-                            Text("↓", modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp), color = purple, style = MaterialTheme.typography.titleLarge)
-                        }
-                        Column {
-                            Text("New download", style = MaterialTheme.typography.titleLarge, color = ink)
-                            Text("Files · Drive · APK · PDF · ZIP · more", style = MaterialTheme.typography.bodySmall, color = muted)
-                        }
-                    }
-                    OutlinedTextField(
-                        value = url,
-                        onValueChange = { url = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Download URL") },
-                        placeholder = { Text("Paste or share any file / video link") },
-                        minLines = 2,
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-                    )
-                    Button(
-                        onClick = { if (isYoutubeUrl(url.trim())) showYoutubeChooser = true else { message = onEnqueue(url); downloads = onRefresh() } },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = purple)
-                    ) { Text("↓   Download file", style = MaterialTheme.typography.titleSmall) }
-                    Text(message, style = MaterialTheme.typography.bodySmall, color = muted)
-                }
-            }
-        }
-
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFFEDE8F5))
-            ) {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Surface(color = androidx.compose.ui.graphics.Color.White, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
-                            Text("▶", modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp), color = purple, style = MaterialTheme.typography.titleMedium)
-                        }
-                        Column {
-                            Text("Website video", style = MaterialTheme.typography.titleLarge, color = ink)
-                            Text("Auto-detect YouTube · MP3 · 360p–1080p", style = MaterialTheme.typography.bodySmall, color = muted)
-                        }
-                    }
-                    Box {
-                        OutlinedButton(
-                            onClick = { showYoutubeChooser = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
-                        ) { Text("Choose format  ·  $quality") }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            listOf("Best", "1080p", "720p", "480p", "Audio MP3").forEach { item ->
-                                DropdownMenuItem(text = { Text(item) }, onClick = { quality = item; menuOpen = false })
-                            }
-                        }
-                    }
-                    Button(
-                        onClick = { showYoutubeChooser = true },
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        enabled = url.trim().startsWith("http", ignoreCase = true),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = purple)
-                    ) { Text("▶   Choose download format") }
-                    OutlinedButton(
-                        onClick = onStopVideo,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-                    ) { Text("Stop video download", color = purple) }
-                    LinearProgressIndicator(
-                        progress = { (ytProgress / 100f).coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth(),
-                        color = teal,
-                        trackColor = androidx.compose.ui.graphics.Color(0xFFD8D0E5)
-                    )
-                    Text(ytStatus, style = MaterialTheme.typography.bodySmall, color = muted)
-                }
-            }
-        }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Downloads", style = MaterialTheme.typography.titleLarge, color = ink)
-                    Text("${downloads.size} item(s)", style = MaterialTheme.typography.bodySmall, color = muted)
-                }
-                Surface(color = androidx.compose.ui.graphics.Color(0xFFE5F5F1), shape = androidx.compose.foundation.shape.RoundedCornerShape(50)) {
-                    Text("LIVE", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = teal, style = MaterialTheme.typography.labelMedium)
-                }
-            }
-        }
-
-        if (downloads.isEmpty()) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("↓", color = purple, style = MaterialTheme.typography.headlineLarge)
-                        Text("Nothing here yet", style = MaterialTheme.typography.titleMedium, color = ink)
-                        Text("Your direct downloads will appear here.", style = MaterialTheme.typography.bodySmall, color = muted)
-                    }
-                }
-            }
-        } else {
-            items(downloads, key = { it.id }) { item ->
-                DownloadCard(item) { onCancel(item.id); downloads = onRefresh() }
-            }
-        }
-
-        item {
-            Text(
-                "Downloads are saved in Downloads/FastIDM. Website support depends on the source site.",
-                style = MaterialTheme.typography.bodySmall,
-                color = muted
             )
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().align(androidx.compose.ui.Alignment.TopCenter),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { history = onHistory(); showHistory = true }) {
+                Text("History  ↗", color = purple, style = MaterialTheme.typography.titleSmall)
+            }
         }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(androidx.compose.ui.Alignment.Center),
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Surface(
+                color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.58f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.72f)),
+                shadowElevation = 12.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Download everything",
+                        color = ink,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = url,
+                            onValueChange = { url = it; message = "" },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("Paste a video or file link") },
+                            singleLine = true,
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = purple,
+                                unfocusedBorderColor = muted.copy(alpha = 0.35f),
+                                focusedContainerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f),
+                                unfocusedContainerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.25f)
+                            )
+                        )
+                        Button(
+                            onClick = {
+                                val candidate = url.trim()
+                                when {
+                                    candidate.isBlank() -> message = "Paste a link first."
+                                    !candidate.startsWith("https://", true) && !candidate.startsWith("http://", true) ->
+                                        message = "Enter a valid web link."
+                                    isVideoPlatformUrl(candidate) -> {
+                                        quality = "Best"
+                                        showVideoChooser = true
+                                    }
+                                    else -> message = onEnqueue(candidate)
+                                }
+                            },
+                            modifier = Modifier.height(56.dp),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = purple)
+                        ) {
+                            Text("Search")
+                        }
+                    }
+                    if (message.isNotBlank()) {
+                        Text(message, color = muted, style = MaterialTheme.typography.bodySmall)
+                    } else if (ytProgress > 0f && ytProgress < 100f) {
+                        Text("Video download · ${ytProgress.toInt()}%", color = muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (ytProgress > 0f && ytProgress < 100f) {
+                        LinearProgressIndicator(
+                            progress = { (ytProgress / 100f).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = purple,
+                            trackColor = purple.copy(alpha = 0.12f)
+                        )
+                        TextButton(onClick = onStopVideo) { Text("Stop download", color = muted) }
+                    }
+                }
+            }
+        }
+
+        Text(
+            "Soul Player",
+            modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 8.dp),
+            color = muted.copy(alpha = 0.82f),
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }
 
