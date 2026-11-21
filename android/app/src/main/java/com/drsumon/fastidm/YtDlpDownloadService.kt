@@ -15,7 +15,9 @@ import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import java.io.File
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -24,7 +26,7 @@ private object YtDlpOperationLock {
 }
 
 class YtDlpDownloadService : Service() {
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue())
     private val notificationManager by lazy { getSystemService(NOTIFICATION_SERVICE) as NotificationManager }
 
     override fun onCreate() {
@@ -172,8 +174,10 @@ class YtDlpDownloadService : Service() {
             notificationManager.notify(NOTIFICATION_ID, buildNotification("yt-dlp update failed", 0, false))
             android.util.Log.w(TAG, message, e)
         } finally {
-            stopForeground(STOP_FOREGROUND_DETACH)
-            if (executor.queue.isEmpty()) stopSelf()
+            if (executor.queue.isEmpty()) {
+                stopForeground(STOP_FOREGROUND_DETACH)
+                stopSelf()
+            }
         }
     }
 
