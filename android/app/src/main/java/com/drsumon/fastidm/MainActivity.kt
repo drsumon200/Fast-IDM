@@ -13,6 +13,7 @@ import android.content.ContentUris
 import android.webkit.URLUtil
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -163,6 +164,60 @@ private fun normalizeGoogleDriveUrl(raw: String): String {
     } else raw.trim()
 }
 
+
+@Composable
+private fun DownloadHistoryScreen(
+    history: List<HistoryItem>,
+    onBack: () -> Unit,
+    onPlayAudio: (HistoryItem) -> Unit,
+    onPlayVideo: (HistoryItem) -> Unit
+) {
+    val ink = androidx.compose.ui.graphics.Color(0xFF211936)
+    val muted = androidx.compose.ui.graphics.Color(0xFF716B7D)
+    val purple = androidx.compose.ui.graphics.Color(0xFF6046A5)
+    BackHandler(onBack = onBack)
+    Column(
+        modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFFF5F2FA))
+            .statusBarsPadding().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("← Back", color = purple) }
+            Spacer(Modifier.width(8.dp))
+            Text("Download History", style = MaterialTheme.typography.titleLarge, color = ink)
+        }
+        Text("${history.size} downloaded file(s)", color = muted, style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
+        if (history.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                Text("No completed downloads yet.", color = muted)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
+                items(history, key = { it.id }) { file ->
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(file.title, color = ink, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                            Text("${file.mime}  ·  ${formatBytes(file.size)}", color = muted, style = MaterialTheme.typography.bodySmall)
+                            Text(android.text.format.DateFormat.format("dd MMM yyyy, hh:mm a", file.date).toString(), color = muted, style = MaterialTheme.typography.labelSmall)
+                            val audio = file.mime.startsWith("audio/")
+                            val video = file.mime.startsWith("video/") || file.title.substringAfterLast('.', "").lowercase() in setOf("mp4", "mkv", "webm", "3gp", "mov", "m4v")
+                            if (audio || video) {
+                                Button(
+                                    onClick = { if (audio) onPlayAudio(file) else onPlayVideo(file) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = purple)
+                                ) { Text(if (audio) "▶ Play" else "▶ Play video") }
+                            } else {
+                                Text("This file type has no in-app preview.", color = muted, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun FastIdmHome(
     initialUrl: String,
@@ -214,29 +269,27 @@ private fun FastIdmHome(
     val teal = androidx.compose.ui.graphics.Color(0xFF16A995)
 
     if (showHistory) {
-        AlertDialog(
-            onDismissRequest = { showHistory = false },
-            title = { Text("Download history") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.heightIn(max = 460.dp)) {
-                    Button(onClick = { context.startActivity(Intent(context, SoulPlayerActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text("♫  Open Soul Player") }
-                    if (history.isEmpty()) Text("No completed files found in Downloads/FastIDM yet.", color = muted)
-                    else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(history, key = { it.id }) { file ->
-                            Card(colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFFF5F2FA))) {
-                                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    Text(file.title, color = ink, style = MaterialTheme.typography.titleSmall, maxLines = 2)
-                                    Text("${file.mime}  ·  ${formatBytes(file.size)}", color = muted, style = MaterialTheme.typography.bodySmall)
-                                    if (file.mime.startsWith("audio/")) TextButton(onClick = { context.startActivity(Intent(context, SoulPlayerActivity::class.java)) }) { Text("Play in Soul Player") }
-                                    else TextButton(onClick = { try { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(file.uri, file.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) } catch (_: Exception) {} }) { Text("Open file") }
-                                }
-                            }
-                        }
-                    }
-                }
+        DownloadHistoryScreen(
+            history = history,
+            onBack = { showHistory = false },
+            onPlayAudio = { file ->
+                context.startActivity(
+                    Intent(context, SoulPlayerActivity::class.java)
+                        .setData(file.uri)
+                        .putExtra("fastidm_audio_title", file.title)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                )
             },
-            confirmButton = { TextButton(onClick = { showHistory = false }) { Text("Close") } }
+            onPlayVideo = { file ->
+                context.startActivity(
+                    Intent(context, VideoPlayerActivity::class.java)
+                        .setData(file.uri)
+                        .putExtra("title", file.title)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                )
+            }
         )
+        return
     }
 
     if (showYoutubeChooser) {
