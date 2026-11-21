@@ -63,9 +63,9 @@ class MainActivity : ComponentActivity() {
                             darkMode = enabled
                             getSharedPreferences("fastidm_settings", MODE_PRIVATE).edit().putBoolean("dark_mode", enabled).apply()
                         },
-                        ::enqueueDownload,
-                        ::queryDownloads,
-                        ::queryHistory,
+                        onEnqueue = ::enqueueDownload,
+                        onRefresh = ::queryDownloads,
+                        onHistory = ::queryHistory,
                         onStartVideo = { url, quality ->
                             val service = Intent(this, YtDlpDownloadService::class.java)
                                 .setAction(YtDlpDownloadService.ACTION_START)
