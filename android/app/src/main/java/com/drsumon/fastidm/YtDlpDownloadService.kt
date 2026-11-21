@@ -14,7 +14,6 @@ import androidx.core.app.NotificationCompat
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
-import com.yausername.youtubedl_android.YoutubeDL.UpdateChannel
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -60,21 +59,8 @@ class YtDlpDownloadService : Service() {
             YoutubeDL.getInstance().init(applicationContext)
             FFmpeg.getInstance().init(applicationContext)
 
-            // YouTube frequently changes extraction requirements. Refresh yt-dlp at most
-            // once every 7 days on this background worker, never on the UI thread.
-            val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-            val lastUpdate = prefs.getLong("yt_dlp_last_update", 0L)
-            if (System.currentTimeMillis() - lastUpdate > UPDATE_INTERVAL_MS) {
-                saveState("Updating YouTube support…", 0f)
-                try {
-                    YoutubeDL.getInstance().updateYoutubeDL(applicationContext, UpdateChannel._STABLE)
-                    prefs.edit().putLong("yt_dlp_last_update", System.currentTimeMillis()).apply()
-                    saveState("Preparing video download…", 0f)
-                } catch (_: Exception) {
-                    // If offline, keep trying with the bundled extractor.
-                    saveState("Update unavailable; trying bundled downloader…", 0f)
-                }
-            }
+            // Never update yt-dlp on the download-start path. The bundled extractor
+            // is used immediately so a network update cannot delay every first download.
 
             val cleanUrl = url.trim()
             val request = YoutubeDLRequest(cleanUrl)
