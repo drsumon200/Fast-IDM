@@ -36,7 +36,7 @@
                 <data android:scheme="https" />
             </intent-filter>
         </activity>
-        <activity android:name=".VideoPlayerActivity" android:exported="false" />
+        <activity android:name=".VideoPlayerActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity
             android:name=".SoulPlayerActivity"
             android:exported="false"

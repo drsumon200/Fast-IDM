@@ -17,6 +17,9 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.DownloadListener
 import android.webkit.WebSettings
+import android.webkit.JavascriptInterface
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.ui.viewinterop.AndroidView
 import java.net.URLConnection
 import androidx.activity.ComponentActivity
@@ -416,7 +419,13 @@ private fun FastIdmHome(
             darkMode = darkMode,
             initialTarget = browserStart,
             onBack = { showBrowser = false },
-            onDownload = { candidate -> message = onEnqueue(candidate) }
+            onDownload = { candidate -> message = onEnqueue(candidate) },
+            onVideoDetected = { candidate ->
+                url = candidate
+                showBrowser = false
+                quality = "Best"
+                showVideoChooser = true
+            }
         )
         return
     }
@@ -428,7 +437,7 @@ private fun FastIdmHome(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Select the available quality for this video.", color = muted, style = MaterialTheme.typography.bodySmall)
-                    listOf("Best", "1080p", "720p", "360p").forEach { option ->
+                    listOf("Best", "1080p", "720p", "480p", "360p").forEach { option ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
@@ -695,7 +704,8 @@ private fun InAppBrowserScreen(
     darkMode: Boolean,
     initialTarget: String,
     onBack: () -> Unit,
-    onDownload: (String) -> Unit
+    onDownload: (String) -> Unit,
+    onVideoDetected: (String) -> Unit
 ) {
     val purple = if (darkMode) androidx.compose.ui.graphics.Color(0xFFB9A3FF) else androidx.compose.ui.graphics.Color(0xFF6046A5)
     val ink = if (darkMode) androidx.compose.ui.graphics.Color(0xFFF1EDF8) else androidx.compose.ui.graphics.Color(0xFF211936)
@@ -757,6 +767,14 @@ private fun InAppBrowserScreen(
                 factory = { ctx ->
                     WebView(ctx).apply {
                         webView = this
+                        addJavascriptInterface(object {
+                            @JavascriptInterface
+                            fun onVideoDownloadRequested(videoUrl: String) {
+                                Handler(Looper.getMainLooper()).post {
+                                    if (isVideoPlatformUrl(videoUrl)) onVideoDetected(videoUrl)
+                                }
+                            }
+                        }, "FastIdmBridge")
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.loadsImagesAutomatically = true
@@ -785,6 +803,36 @@ private fun InAppBrowserScreen(
                             override fun onPageFinished(view: WebView, url: String) {
                                 address = url
                                 pageTitle = view.title?.take(45) ?: "Browser"
+                                view.evaluateJavascript(
+                                    """
+                                    (function() {
+                                      function installFastIdmButton() {
+                                        var host = location.hostname.toLowerCase().replace(/^www\./, '');
+                                        var known = ['youtube.com','youtu.be','youtube-nocookie.com','vimeo.com','dailymotion.com','tiktok.com','instagram.com','facebook.com','fb.watch','twitch.tv','x.com','twitter.com'];
+                                        var supported = known.some(function(d) { return host === d || host.endsWith('.' + d); });
+                                        var video = document.querySelector('video');
+                                        if (!supported && !video) return;
+                                        if (document.getElementById('fastidm-download-fab')) return;
+                                        var b = document.createElement('button');
+                                        b.id = 'fastidm-download-fab';
+                                        b.type = 'button';
+                                        b.setAttribute('aria-label', 'Download video with Fast IDM');
+                                        b.innerHTML = '<span style="font-size:20px;line-height:1">⬇</span><span>Fast IDM</span>';
+                                        b.style.cssText = 'position:fixed;z-index:2147483647;right:18px;bottom:90px;border:0;border-radius:28px;padding:12px 17px;background:#6046a5;color:white;font:600 14px sans-serif;box-shadow:0 4px 18px #0006;display:flex;align-items:center;gap:8px;cursor:pointer;';
+                                        b.addEventListener('click', function(e) {
+                                          e.preventDefault(); e.stopPropagation();
+                                          if (window.FastIdmBridge) window.FastIdmBridge.onVideoDownloadRequested(location.href);
+                                        });
+                                        document.body.appendChild(b);
+                                      }
+                                      installFastIdmButton();
+                                      document.addEventListener('yt-navigate-finish', installFastIdmButton);
+                                      document.addEventListener('DOMContentLoaded', installFastIdmButton);
+                                      new MutationObserver(installFastIdmButton).observe(document.documentElement, {childList:true,subtree:true});
+                                    })();
+                                    """.trimIndent(),
+                                    null
+                                )
                             }
                         }
                         setDownloadListener(DownloadListener { url, _, contentDisposition, mimeType, _ ->
