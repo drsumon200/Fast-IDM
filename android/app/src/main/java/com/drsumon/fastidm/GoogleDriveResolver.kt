@@ -40,7 +40,12 @@ object GoogleDriveResolver {
                 setRequestProperty("User-Agent", USER_AGENT)
                 setRequestProperty("Accept", "*/*")
                 setRequestProperty("Accept-Language", "en-US,en;q=0.8")
-                if (cookies.isNotEmpty()) {
+                // Probe only one byte so resolving a large Drive file never starts a hidden full download.
+                setRequestProperty("Range", "bytes=0-0")
+                val requestHost = URL(currentUrl).host.lowercase()
+                val isGoogleHost = requestHost == "google.com" || requestHost.endsWith(".google.com") ||
+                    requestHost == "googleusercontent.com" || requestHost.endsWith(".googleusercontent.com")
+                if (isGoogleHost && cookies.isNotEmpty()) {
                     setRequestProperty("Cookie", cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
                 }
             }
