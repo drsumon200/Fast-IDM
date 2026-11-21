@@ -145,7 +145,8 @@ public class SoulPlayerActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (isPlayingNow) moveTaskToBack(true);
+        if (openedFromFastIdm) finish();
+        else if (isPlayingNow) moveTaskToBack(true);
         else super.onBackPressed();
     }
 
@@ -295,6 +296,17 @@ public class SoulPlayerActivity extends Activity {
     }
 
     private class LocalAssetClient extends WebViewClient {
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            if (pendingAudioUri != null) {
+                String streamUrl = "https://" + HOST + "/download?uri=" + Uri.encode(pendingAudioUri.toString());
+                String js = "if(window.openFastIdmAudio) { window.openFastIdmAudio(" + JSONObject.quote(streamUrl) + "," + JSONObject.quote(pendingAudioTitle == null ? "Downloaded audio" : pendingAudioTitle) + "); }";
+                view.evaluateJavascript(js, null);
+                pendingAudioUri = null;
+            }
+        }
+
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
             Uri u = req.getUrl();
