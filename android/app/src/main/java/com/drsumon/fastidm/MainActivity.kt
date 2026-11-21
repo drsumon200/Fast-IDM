@@ -232,9 +232,9 @@ private fun DownloadHistoryScreen(
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("← Back", color = purple) }
             Spacer(Modifier.width(8.dp))
-            Text("Download History", style = MaterialTheme.typography.titleLarge, color = ink)
+            Text("Download History", style = MaterialTheme.typography.titleLarge, color = dialogInk)
         }
-        Text("${history.size} finished file(s)", color = muted, style = MaterialTheme.typography.bodySmall,
+        Text("${history.size} finished file(s)", color = dialogMuted, style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(start = 8.dp, bottom = 12.dp))
 
         val unfinishedDownloads = downloads
@@ -242,7 +242,7 @@ private fun DownloadHistoryScreen(
             .sortedByDescending { it.id }
         val hasVideoActivity = videoStatus != "Ready"
         if (unfinishedDownloads.isNotEmpty() || hasVideoActivity) {
-            Text("Current / unfinished downloads", color = ink, style = MaterialTheme.typography.titleSmall,
+            Text("Current / unfinished downloads", color = dialogInk, style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
             LazyColumn(
                 modifier = Modifier.weight(1f, fill = false),
@@ -253,21 +253,21 @@ private fun DownloadHistoryScreen(
                     item(key = "yt-dlp-status") {
                         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = panel)) {
                             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("Video download", color = ink, style = MaterialTheme.typography.titleSmall)
+                                Text("Video download", color = dialogInk, style = MaterialTheme.typography.titleSmall)
                                 val videoLabel = when {
                                     videoStatus.startsWith("Completed") -> "Finished"
                                     videoStatus.startsWith("Failed") || videoStatus == "Canceled" -> "Unfinished · ${videoStatus}"
                                     videoProgress > 0f -> "Downloading · ${videoProgress.toInt()}%"
                                     else -> "Unfinished · Preparing"
                                 }
-                                Text(videoLabel, color = muted, style = MaterialTheme.typography.bodySmall)
+                                Text(videoLabel, color = dialogMuted, style = MaterialTheme.typography.bodySmall)
                                 if (!videoStatus.startsWith("Completed") && !videoStatus.startsWith("Failed") && videoStatus != "Canceled") {
                                     LinearProgressIndicator(
                                         progress = { (videoProgress / 100f).coerceIn(0f, 1f) },
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
-                                Text(videoStatus, color = muted, style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                                Text(videoStatus, color = dialogMuted, style = MaterialTheme.typography.labelSmall, maxLines = 2)
                             }
                         }
                     }
@@ -275,7 +275,7 @@ private fun DownloadHistoryScreen(
                 items(unfinishedDownloads, key = { "download-${it.id}" }) { item ->
                     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = panel)) {
                         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(item.title, color = ink, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                            Text(item.title, color = dialogInk, style = MaterialTheme.typography.titleSmall, maxLines = 2)
                             val percent = if (item.total > 0L) ((item.downloaded * 100L) / item.total).toInt().coerceIn(0, 100) else -1
                             val stateLabel = when (item.status) {
                                 DownloadManager.STATUS_PENDING -> "Unfinished · Waiting"
@@ -284,14 +284,14 @@ private fun DownloadHistoryScreen(
                                 DownloadManager.STATUS_FAILED -> "Unfinished · Failed"
                                 else -> "Unfinished"
                             }
-                            Text(stateLabel, color = muted, style = MaterialTheme.typography.bodySmall)
+                            Text(stateLabel, color = dialogMuted, style = MaterialTheme.typography.bodySmall)
                             if (item.status == DownloadManager.STATUS_RUNNING) {
                                 LinearProgressIndicator(
                                     progress = { if (percent >= 0) percent / 100f else 0f },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Text("${formatBytes(item.downloaded)} / ${if (item.total > 0L) formatBytes(item.total) else "Unknown size"}",
-                                    color = muted, style = MaterialTheme.typography.labelSmall)
+                                    color = dialogMuted, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -301,16 +301,16 @@ private fun DownloadHistoryScreen(
 
         if (history.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                Text("No completed downloads yet.", color = muted)
+                Text("No completed downloads yet.", color = dialogMuted)
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
                 items(history, key = { it.id }) { file ->
                     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = panel)) {
                         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(file.title, color = ink, style = MaterialTheme.typography.titleSmall, maxLines = 2)
-                            Text("${file.mime}  ·  ${formatBytes(file.size)}", color = muted, style = MaterialTheme.typography.bodySmall)
-                            Text(android.text.format.DateFormat.format("dd MMM yyyy, hh:mm a", file.date).toString(), color = muted, style = MaterialTheme.typography.labelSmall)
+                            Text(file.title, color = dialogInk, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                            Text("${file.mime}  ·  ${formatBytes(file.size)}", color = dialogMuted, style = MaterialTheme.typography.bodySmall)
+                            Text(android.text.format.DateFormat.format("dd MMM yyyy, hh:mm a", file.date).toString(), color = dialogMuted, style = MaterialTheme.typography.labelSmall)
                             val audio = file.mime.startsWith("audio/")
                             val video = file.mime.startsWith("video/") || file.title.substringAfterLast('.', "").lowercase() in setOf("mp4", "mkv", "webm", "3gp", "mov", "m4v")
                             if (audio || video) {
@@ -320,7 +320,7 @@ private fun DownloadHistoryScreen(
                                     colors = ButtonDefaults.buttonColors(containerColor = purple)
                                 ) { Text(if (audio) "▶ Play" else "▶ Play video") }
                             } else {
-                                Text("This file type has no in-app preview.", color = muted, style = MaterialTheme.typography.bodySmall)
+                                Text("This file type has no in-app preview.", color = dialogMuted, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -370,8 +370,8 @@ private fun FastIdmHome(
     }
 
     val purple = androidx.compose.ui.graphics.Color(0xFF6046A5)
-    val ink = androidx.compose.ui.graphics.Color(0xFF211936)
-    val muted = androidx.compose.ui.graphics.Color(0xFF716B7D)
+    val dialogInk = androidx.compose.ui.graphics.Color(0xFF211936)
+    val dialogMuted = androidx.compose.ui.graphics.Color(0xFF716B7D)
     val bg = if (darkMode) androidx.compose.ui.graphics.Color(0xFF121018) else androidx.compose.ui.graphics.Color(0xFFF5F2FA)
 
     if (showHistory) {
@@ -424,17 +424,17 @@ private fun FastIdmHome(
     if (showVideoChooser) {
         AlertDialog(
             onDismissRequest = { showVideoChooser = false },
-            title = { Text("Choose video quality", color = ink) },
+            title = { Text("Choose video quality", color = dialogInk) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Select the available quality for this video.", color = muted, style = MaterialTheme.typography.bodySmall)
+                    Text("Select the available quality for this video.", color = dialogMuted, style = MaterialTheme.typography.bodySmall)
                     listOf("Best", "1080p", "720p", "360p").forEach { option ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                         ) {
                             RadioButton(selected = quality == option, onClick = { quality = option })
-                            Text(option, modifier = Modifier.weight(1f), color = ink)
+                            Text(option, modifier = Modifier.weight(1f), color = dialogInk)
                         }
                     }
                 }
