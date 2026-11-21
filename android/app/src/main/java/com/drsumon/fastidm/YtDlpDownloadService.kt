@@ -157,15 +157,15 @@ class YtDlpDownloadService : Service() {
                     notificationManager.notify(NOTIFICATION_ID, buildNotification(message, 100, false))
                 }
                 null -> {
-                    val message = "yt-dlp update returned no status; keeping current version"
+                    val message = "yt-dlp update returned no status; continuing with installed runtime"
                     saveState(message, 0f)
                     notificationManager.notify(NOTIFICATION_ID, buildNotification(message, 0, false))
                 }
             }
         } catch (e: Exception) {
-            val message = "yt-dlp update failed; keeping current version: ${(e.message ?: "network or server error").take(140)}"
+            val message = "yt-dlp update failed; continuing with installed/bundled yt-dlp: ${(e.message ?: "network or server error").take(140)}"
             saveState(message, 0f)
-            notificationManager.notify(NOTIFICATION_ID, buildNotification("yt-dlp update failed", 0, false))
+            notificationManager.notify(NOTIFICATION_ID, buildNotification("yt-dlp update failed · using installed version", 0, false))
             android.util.Log.w(TAG, message, e)
         } finally {
             if (executor.queue.isEmpty()) {
